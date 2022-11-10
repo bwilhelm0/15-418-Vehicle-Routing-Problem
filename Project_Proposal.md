@@ -1,6 +1,8 @@
 **TITLE: Parallel Vehicle Routing Problem in the United States **
+
 Kobe Zhang
 Brendan Wilhelm
+
 **URL**: https://bwilhelm0.github.io/15-418-Vehicle-Routing-Problem/
 
 **SUMMARY**: We are going to implement and optimize a solver for the vehicle routing problem and other forms of the traveling salesman problem using the PSC. We will measure cost using large datasets of real-world Uber data, and minimize the round-trip cost of a vehicle fleet that covers every node.
