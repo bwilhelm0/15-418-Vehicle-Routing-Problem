@@ -5,6 +5,8 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 
 infile = "uber_data/uber.csv"
+outfile_filtered = "uber_data/uber_filtered.csv"
+outfile_condensed = "uber_data/uber_condensed.csv"
 trips_raw = pd.read_csv(infile)
 
 #Time information is presented in two columns (key and pickup_datetime).
@@ -36,11 +38,20 @@ trip_outliers = trips_raw[(trips_raw["distance"] < dist_hi) &
 
 trips_filtered = trip_outliers
 
+trips_filtered = trips_filtered.groupby(['pickup_longitude','pickup_latitude','dropoff_latitude','dropoff_longitude']).mean()
+trips_filtered['edge'] = range(1, len(trips_filtered) + 1)
 
-
-trips_filtered = trips_filtered.groupby(['pickup_longitude','pickup_latitude','dropoff_latitude','dropoff_longitude'])
-
+trips_condensed = trips_filtered[['edge','distance']]
+# trips_condensed = pd.DataFrame()
+# trips_condensed['node'] = trips_filtered['node']
+# trips_condensed['distance'] = trips_filtered['distance']
 
 #['distance'].apply(', '.join).reset_index()
-print(trips_filtered.size())
-print(trips_filtered.head(10))
+#print(trips_filtered.size())
+#trips_condensed.drop(['pickup_longitude','pickup_latitude','dropoff_latitude','dropoff_longitude'], axis=0)
+#trips_filtered.drop(['pickup_longitude','pickup_latitude','dropoff_latitude','dropoff_longitude'], axis=1)
+trips_condensed = trips_condensed.reset_index()
+print(trips_condensed)
+trips_filtered.to_csv(outfile_filtered)
+trips_condensed.to_csv(outfile_condensed)
+
