@@ -1,7 +1,7 @@
 import json
 import numpy as np # linear algebra
 import pandas as pd # data processing, CSV file I/O (e.g. pd.read_csv)
-import matplotlib.pyplot as plt
+#import matplotlib.pyplot as plt
 import seaborn as sns
 
 infile = "uber_data/uber.csv"
@@ -42,15 +42,47 @@ trips_filtered = trips_filtered.groupby(['pickup_longitude','pickup_latitude','d
 trips_filtered['edge'] = range(1, len(trips_filtered) + 1)
 
 trips_condensed = trips_filtered[['edge','distance']]
-# trips_condensed = pd.DataFrame()
-# trips_condensed['node'] = trips_filtered['node']
-# trips_condensed['distance'] = trips_filtered['distance']
 
-#['distance'].apply(', '.join).reset_index()
-#print(trips_filtered.size())
-#trips_condensed.drop(['pickup_longitude','pickup_latitude','dropoff_latitude','dropoff_longitude'], axis=0)
-#trips_filtered.drop(['pickup_longitude','pickup_latitude','dropoff_latitude','dropoff_longitude'], axis=1)
 trips_condensed = trips_condensed.reset_index()
+
+
+# trips_condensed['pickup_id'] = trips_condensed.groupby(['pickup_longitude','pickup_latitude']).ngroup()
+# trips_condensed['dropoff_id'] = trips_condensed.groupby(['dropoff_longitude','dropoff_latitude']).ngroup()
+
+pickup_longitude = trips_condensed['pickup_longitude'].tolist()
+pickup_latitude = trips_condensed['pickup_latitude'].tolist()
+
+dropoff_longitude = trips_condensed['dropoff_longitude'].tolist()
+dropoff_latitude = trips_condensed['dropoff_latitude'].tolist()
+
+node_dict = {}
+
+count = 0 
+for i in range(len(pickup_longitude)):
+    index = node_dict.get((pickup_longitude[i],pickup_latitude[i]),-1)
+    if (index == -1):
+        node_dict[(pickup_longitude[i],pickup_latitude[i])] = count
+        count+=1
+
+for i in range(len(dropoff_longitude)):
+    index = node_dict.get((dropoff_longitude[i],dropoff_latitude[i]),-1)
+    if (index == -1):
+        node_dict[(dropoff_longitude[i],dropoff_latitude[i])] = count
+        count+=1
+
+# for row in trips_condensed:
+#     row['pickup_node'] = node_dict[(row['pickup_longitude'],row['pickup_latitude'])] 
+#     row['dropoff_node'] = node_dict[(row['dropoff_longitude'],row['dropoff_latitude'])]
+
+trips_condensed['dropoff_node'] = trips_condensed.apply(lambda row: node_dict.get((row['dropoff_longitude'],row['dropoff_latitude']),-1),axis = 1)
+trips_condensed['pickup_node'] = trips_condensed.apply(lambda row: node_dict.get((row['pickup_longitude'],row['pickup_latitude']),-1),axis = 1)
+
+
+print(node_dict)
+# for row in trips_condensed:
+#     print(int(row['pickup_latitude']))
+
+trips_condensed = trips_condensed[['dropoff_node','pickup_node','distance','dropoff_longitude','dropoff_latitude','pickup_longitude','pickup_latitude']]
 print(trips_condensed)
 trips_filtered.to_csv(outfile_filtered)
 trips_condensed.to_csv(outfile_condensed)
