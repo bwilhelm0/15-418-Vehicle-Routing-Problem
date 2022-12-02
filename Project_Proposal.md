@@ -48,10 +48,9 @@ Uber data processing
 Nov 20-26
 Sequential traveling salesman problem and naive workload generation implementation
 Nov 27-Dec 3
-Analysis of initial implementation and improvements
-Python visualization 
+Analysis of initial TSP implementation and improvements. Integration of Uber data with TSP approach. Workload balancing scheme implementation
 Dec 4-10
-Continued optimization with improved workload balancing schemes
+Continued optimization and improvements to workload balancing scheme.
 Dec 11-17
 Final program iteration and analysis
 Poster creation, live demo verification, finishing touches
