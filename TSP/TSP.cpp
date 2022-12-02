@@ -1,9 +1,49 @@
 using namespace std;
 #include <queue>
+#include <unordered_map>
 #include <limits>
 #include <iostream>
+#include <fstream>
+#include <sstream>
 
 #define INF numeric_limits<int>::max()
+
+void read_data()
+{
+  fstream fin;
+  fin.open("../uber_data/uber_condensed.csv",ios::in);
+  if (fin.fail()) {
+    cout << "Fail" << endl;
+  }
+
+  vector <string> row;
+  string line, word, temp;
+
+  while (fin >> temp){
+    row.clear();
+    cout << "enter loop" << endl;
+
+    //read an entire row and store it in string 
+    getline(fin,line);
+    cout << "test1" << endl;
+
+    //break words up 
+    stringstream s(line);
+    cout << "test2" << endl;
+    //read every column data of a row and store it in word
+    while (getline(s, word, ',')){
+        cout << "in getline loop" << endl; //test
+
+        //add every word in a row into row vector
+        row.push_back(word);
+    }
+
+    //check if the rows are working 
+    cout << row.size() << endl;
+    cout << "Row " << row[0] << endl;
+
+  }  
+}
 
 class Node
 {
@@ -84,11 +124,19 @@ int calcCost(int **matrix_reduced, int size)
     return cost;
 }
 
-void printPath(vector<pair<int, int>> const &list)
-{
+void printPath(vector<pair<int, int>> const &list) {
     for (int i = 0; i < list.size() - 1; i++)
         cout << list[i].first << " -> ";
     cout << list[list.size() - 1].first << " -> " << list[list.size() - 1].second << endl;
+}
+
+void printMatrix(int **adjacencyMatrix, int size) {
+    for (int row = 0; row < size; row++) {
+        for (int col = 0; col < size - 1; col++) {
+            cout << adjacencyMatrix[row][col] << ", ";
+        }
+        cout << adjacencyMatrix[row][size - 1] << endl;
+    }
 }
 
 class comp {
@@ -114,7 +162,7 @@ int solve(int **adjacencyMatrix, int size)
         if (min->level == size - 1)
         {
             min->path.push_back(make_pair(i, 0));
-            printPath(min->path);
+            //printPath(min->path);
             return min->cost;
         }
 
@@ -180,6 +228,9 @@ int main()
     int size = 13;
     int N = 13;
     int proc = 4;
+
+    read_data();
+
     int adjacencyMatrix[N][N] =
     // {
     //     {INF, 2},
@@ -207,6 +258,8 @@ int main()
       {2145, 357, 1453, 1280, 586, 887, 1114, 2300, 653, 1272, 1017, INF, 504},
       {1972, 579, 1260, 987, 371, 999, 701, 2099, 600, 1162, 1200, 504, INF},
     };
+    
+   
 
     int** matrix = new int*[size];
     for (int i = 0; i < size; ++i) {
@@ -215,8 +268,9 @@ int main()
             matrix[i][j] = adjacencyMatrix[i][j];
         }
     }
+    //printMatrix(matrix, size);
     int res = solve(matrix, size);
-    printf("Cost is %d\n", res);
+    //printf("Cost is %d\n", res);
 
     // Vehicle Routing Algo
 
@@ -232,6 +286,8 @@ int main()
     // Ring reduce to update values
 
     // Use hash table and branching algo to find cheapest route
+    // The key is (the set of points to visit, num vehicles), and the value is (ordered visits for each vehicle, the cost of the trip)
+    //unordered_map<pair<vector<int>, int>, pair<vector<vector<int>>, int>> routeTable;
     
     for (int i = 0; i < size; ++i)
         delete [] matrix[i];
