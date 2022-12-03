@@ -1,12 +1,33 @@
 using namespace std;
 #include <queue>
 #include <unordered_map>
+#include <set>
 #include <limits>
 #include <iostream>
 #include <fstream>
 #include <sstream>
 
 #define INF numeric_limits<int>::max()
+
+
+
+struct VRP {
+  vector<int> list;
+  int numVehicles;
+
+  friend bool operator==(const VRP& a, const VRP& b) {
+    return a.list == b.list && a.numVehicles == b.numVehicles;
+  }
+};
+
+    std::hash<std::vector<int>> vecHash;
+// Our custom std::hash specialization for Planet
+template <>
+struct std::hash<VRP> {
+  size_t operator()(const VRP& p) const noexcept {
+    return std::hash<int>{}(p.numVehicles) + vecHash(p);
+  }
+};
 
 void read_data()
 {
@@ -23,11 +44,11 @@ void read_data()
     row.clear();
     cout << "enter loop" << endl;
 
-    //read an entire row and store it in string 
+    //read an entire row and store it in string
     getline(fin,line);
     cout << "test1" << endl;
 
-    //break words up 
+    //break words up
     stringstream s(line);
     cout << "test2" << endl;
     //read every column data of a row and store it in word
@@ -38,11 +59,11 @@ void read_data()
         row.push_back(word);
     }
 
-    //check if the rows are working 
+    //check if the rows are working
     cout << row.size() << endl;
     cout << "Row " << row[0] << endl;
 
-  }  
+  }
 }
 
 class Node
@@ -91,7 +112,7 @@ void reduce(int**matrix_reduced, int *row, int *col, int size)
         for (int j = 0; j < size; j++)
             if (matrix_reduced[i][j] < row[i])
                 row[i] = matrix_reduced[i][j];
-    
+
     for (int i = 0; i < size; i++)
         for (int j = 0; j < size; j++)
             if (matrix_reduced[i][j] != INF && row[i] != INF)
@@ -185,7 +206,7 @@ int solve(int **adjacencyMatrix, int size)
 }
 
 int retrieve_cost(vector<int> graph, int num_vehicles, int master) {
-    // hash table with graph and number of vehicles as key. 
+    // hash table with graph and number of vehicles as key.
     // Solve in branching method where you split a number of vehicles to a certain tsp.
 
     return 0;
@@ -229,7 +250,7 @@ int main()
     int N = 13;
     int proc = 4;
 
-    read_data();
+    //read_data();
 
     int adjacencyMatrix[N][N] =
     // {
@@ -258,8 +279,8 @@ int main()
       {2145, 357, 1453, 1280, 586, 887, 1114, 2300, 653, 1272, 1017, INF, 504},
       {1972, 579, 1260, 987, 371, 999, 701, 2099, 600, 1162, 1200, 504, INF},
     };
-    
-   
+
+
 
     int** matrix = new int*[size];
     for (int i = 0; i < size; ++i) {
@@ -280,15 +301,15 @@ int main()
     // Distribute to all processes in ring
 
     // Process each subset
-    
+
     // Format vectors in order given but points in order of traversal with cost at end of list
 
     // Ring reduce to update values
 
     // Use hash table and branching algo to find cheapest route
     // The key is (the set of points to visit, num vehicles), and the value is (ordered visits for each vehicle, the cost of the trip)
-    //unordered_map<pair<vector<int>, int>, pair<vector<vector<int>>, int>> routeTable;
-    
+    //unordered_map<VRP, pair<vector<vector<int>>, int>> routeTable;
+
     for (int i = 0; i < size; ++i)
         delete [] matrix[i];
     delete [] matrix;
