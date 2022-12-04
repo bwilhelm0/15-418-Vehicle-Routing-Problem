@@ -8,42 +8,47 @@ using namespace std;
 
 #define INF numeric_limits<int>::max()
 
-void read_data()
-{
-  fstream fin;
-  fin.open("../uber_data/uber_condensed.csv",ios::in);
-  if (fin.fail()) {
-    cout << "Fail" << endl;
-  }
+void printMatrix(int **adjacencyMatrix, int size) {
+    for (int row = 0; row < size; row++) {
+        for (int col = 0; col < size - 1; col++) {
+            cout << adjacencyMatrix[row][col] << ", ";
+        }
+        cout << adjacencyMatrix[row][size - 1] << endl;
+    }
+}
 
+void read_uber_data(int** matrix)
+{
+
+  int N = 80; //number of nodes 
+  string fname;
   vector <string> row;
   string line, word, temp;
+  vector<vector<string>> content;
+  fname = "uber_condensed.csv";
+  fstream file (fname, ios::in);
 
-  while (fin >> temp){
-    row.clear();
-    cout << "enter loop" << endl;
-
-    //read an entire row and store it in string 
-    getline(fin,line);
-    cout << "test1" << endl;
-
-    //break words up 
-    stringstream s(line);
-    cout << "test2" << endl;
-    //read every column data of a row and store it in word
-    while (getline(s, word, ',')){
-        cout << "in getline loop" << endl; //test
-
-        //add every word in a row into row vector
-        row.push_back(word);
+  if (file.is_open()){
+    while(getline(file,line)){
+        row.clear();
+        stringstream str(line);
+        while(getline(str,word,',')){       //CSV are comma deliminated 
+            row.push_back(word);
+            content.push_back(row);
+        }
     }
+  } else cout << "Could not open file" << endl;
 
-    //check if the rows are working 
-    cout << row.size() << endl;
-    cout << "Row " << row[0] << endl;
+  for (int i=0;i<content.size();i++){
+    int node1 = stoi(content[i][1]);
+    int node2 = stoi(content[i][2]);
 
-  }  
-}
+    matrix[node1][node2] = stoi(content[i][3]);
+  }
+
+  printMatrix(matrix,N);
+}  
+
 
 class Node
 {
@@ -130,14 +135,7 @@ void printPath(vector<pair<int, int>> const &list) {
     cout << list[list.size() - 1].first << " -> " << list[list.size() - 1].second << endl;
 }
 
-void printMatrix(int **adjacencyMatrix, int size) {
-    for (int row = 0; row < size; row++) {
-        for (int col = 0; col < size - 1; col++) {
-            cout << adjacencyMatrix[row][col] << ", ";
-        }
-        cout << adjacencyMatrix[row][size - 1] << endl;
-    }
-}
+
 
 class comp {
 public:
@@ -229,7 +227,7 @@ int main()
     int N = 13;
     int proc = 4;
 
-    read_data();
+    
 
     int adjacencyMatrix[N][N] =
     // {
@@ -258,6 +256,8 @@ int main()
       {2145, 357, 1453, 1280, 586, 887, 1114, 2300, 653, 1272, 1017, INF, 504},
       {1972, 579, 1260, 987, 371, 999, 701, 2099, 600, 1162, 1200, 504, INF},
     };
+
+
     
    
 
@@ -268,6 +268,9 @@ int main()
             matrix[i][j] = adjacencyMatrix[i][j];
         }
     }
+
+    read_uber_data(matrix);
+
     //printMatrix(matrix, size);
     int res = solve(matrix, size);
     //printf("Cost is %d\n", res);
