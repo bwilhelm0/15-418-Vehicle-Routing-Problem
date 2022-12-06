@@ -71,7 +71,7 @@ void read_uber_data(int** matrix)
     }
   } else cout << "Could not open file" << endl;
 
-  for (int i=0;i<content.size();i++){
+  for (int i=0;(size_t) i<content.size();i++){
     int node1 = stoi(content[i][1]);
     int node2 = stoi(content[i][2]);
 
@@ -183,7 +183,7 @@ int calcCost(int **matrix_reduced, int size, vector<int> nodes)
 
 vector<int> printPath(vector<pair<int, int>> const &list) {
     vector<int> res;
-    for (int i = 0; i < list.size() - 1; i++) {
+    for (int i = 0; (size_t) i < list.size() - 1; i++) {
         cout << list[i].first << " -> ";
         res.push_back(list[i].first);
     }
@@ -242,12 +242,12 @@ pair<vector<vector<int>>, int> solve(int **adjacencyMatrix, int size, vector<int
     }
 }
 
-int retrieve_cost(vector<int> graph, int num_vehicles, int master) {
-    // hash table with graph and number of vehicles as key.
-    // Solve in branching method where you split a number of vehicles to a certain tsp.
+// int retrieve_cost(vector<int> graph, int num_vehicles, int master) {
+//     // hash table with graph and number of vehicles as key.
+//     // Solve in branching method where you split a number of vehicles to a certain tsp.
 
-    return 0;
-}
+//     return 0;
+// }
 
 vector<vector<VRP>> genWork(int N, int master, int proc) {
     vector<int> list;
@@ -268,7 +268,6 @@ vector<vector<VRP>> genWork(int N, int master, int proc) {
         }
     }
 
-    int i = 0;
     vector<vector<VRP>> work;
     work.resize(proc);
     for (auto &sg : subgraphs) {
