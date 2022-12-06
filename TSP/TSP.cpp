@@ -20,12 +20,20 @@ struct VRP {
   }
 };
 
-    std::hash<std::vector<int>> vecHash;
+struct VRPsolution {
+    vector<vector<int>> routes;
+    int cost;
+};
+
 // Our custom std::hash specialization for Planet
 template <>
 struct std::hash<VRP> {
   size_t operator()(const VRP& p) const noexcept {
-    return std::hash<int>{}(p.numVehicles) + vecHash(p);
+    int sum = 0;
+    for (auto &n : p.list) {
+        sum += std::hash<int>{}(n);
+    }
+    return std::hash<int>{}(p.numVehicles) + sum;
   }
 };
 
@@ -108,41 +116,61 @@ Node* newNode(int **matrix_parent, int size, vector<pair<int, int>> const &path,
     return node;
 }
 
-void reduce(int**matrix_reduced, int *row, int *col, int size)
+void reduce(int**matrix_reduced, int *row, int *col, int size, vector<int> nodes)
 {
     fill_n(row, size, INF);
     fill_n(col, size, INF);
 
-    for (int i = 0; i < size; i++)
-        for (int j = 0; j < size; j++)
+    for (auto &i : nodes)
+        for (auto &j : nodes)
             if (matrix_reduced[i][j] < row[i])
                 row[i] = matrix_reduced[i][j];
 
-    for (int i = 0; i < size; i++)
-        for (int j = 0; j < size; j++)
+    for (auto &i : nodes)
+        for (auto &j : nodes)
             if (matrix_reduced[i][j] != INF && row[i] != INF)
                 matrix_reduced[i][j] -= row[i];
 
-    for (int i = 0; i < size; i++)
-        for (int j = 0; j < size; j++)
+    for (auto &i : nodes)
+        for (auto &j : nodes)
             if (matrix_reduced[i][j] < col[j])
                 col[j] = matrix_reduced[i][j];
 
-    for (int i = 0; i < size; i++)
-        for (int j = 0; j < size; j++)
+    for (auto &i : nodes)
+        for (auto &j : nodes)
             if (matrix_reduced[i][j] != INF && col[j] != INF)
                 matrix_reduced[i][j] -= col[j];
+
+    // for (int i = 0; i < size; i++)
+    //     for (int j = 0; j < size; j++)
+    //         if (matrix_reduced[i][j] < row[i])
+    //             row[i] = matrix_reduced[i][j];
+
+    // for (int i = 0; i < size; i++)
+    //     for (int j = 0; j < size; j++)
+    //         if (matrix_reduced[i][j] != INF && row[i] != INF)
+    //             matrix_reduced[i][j] -= row[i];
+
+    // for (int i = 0; i < size; i++)
+    //     for (int j = 0; j < size; j++)
+    //         if (matrix_reduced[i][j] < col[j])
+    //             col[j] = matrix_reduced[i][j];
+
+    // for (int i = 0; i < size; i++)
+    //     for (int j = 0; j < size; j++)
+    //         if (matrix_reduced[i][j] != INF && col[j] != INF)
+    //             matrix_reduced[i][j] -= col[j];
 }
 
-int calcCost(int **matrix_reduced, int size)
+int calcCost(int **matrix_reduced, int size, vector<int> nodes)
 {
     int row[size];
     int col[size];
 
-    reduce(matrix_reduced, row, col, size);
+    reduce(matrix_reduced, row, col, size, nodes);
 
     int cost = 0;
-    for (int i = 0; i < size; i++) {
+    for (auto &i : nodes) {
         cost += (row[i] != INF) ? row[i] : 0;
         cost += (col[i] != INF) ? col[i] : 0;
     }
@@ -150,12 +178,17 @@ int calcCost(int **matrix_reduced, int size)
     return cost;
 }
 
-void printPath(vector<pair<int, int>> const &list) {
-    for (int i = 0; i < list.size() - 1; i++)
+vector<int> printPath(vector<pair<int, int>> const &list) {
+    vector<int> res;
+    for (int i = 0; i < list.size() - 1; i++) {
         cout << list[i].first << " -> ";
+        res.push_back(list[i].first);
+    }
     cout << list[list.size() - 1].first << " -> " << list[list.size() - 1].second << endl;
+    res.push_back(list[list.size() - 1].first);
+    res.push_back(list[list.size() - 1].second);
+    return res;
 }
-
 
 
 class comp {
@@ -166,26 +199,29 @@ public:
     }
 };
 
-int solve(int **adjacencyMatrix, int size)
+pair<vector<vector<int>>, int> solve(int **adjacencyMatrix, int size, vector<int> nodes)
 {
+    int nodeSize = nodes.size();
     priority_queue<Node*, vector<Node*>, comp> pq;
     vector<pair<int, int>> v;
     Node* root = newNode(adjacencyMatrix, size, v, 0, -1, 0);
-    root->cost = calcCost(root->matrix_reduced, size);
+    root->cost = calcCost(root->matrix_reduced, size, nodes);
     pq.push(root);
     while (!pq.empty())
     {
         Node* min = pq.top();
         pq.pop();
         int i = min->vertex;
-        if (min->level == size - 1)
+        if (min->level == nodeSize - 1)
         {
             min->path.push_back(make_pair(i, 0));
-            //printPath(min->path);
-            return min->cost;
+            vector<int> finalPath = printPath(min->path);
+            vector<vector<int>> wrapped;
+            wrapped.push_back(finalPath);
+            return make_pair(wrapped, min->cost);
         }
 
-        for (int j = 0; j < size; j++)
+        for (auto &j : nodes)
         {
             if (min->matrix_reduced[i][j] != INF)
             {
@@ -193,7 +229,7 @@ int solve(int **adjacencyMatrix, int size)
                     min->level + 1, i, j);
 
                 child->cost = min->cost + min->matrix_reduced[i][j]
-                            + calcCost(child->matrix_reduced, size);
+                            + calcCost(child->matrix_reduced, size, nodes);
 
                 pq.push(child);
             }
@@ -210,7 +246,7 @@ int retrieve_cost(vector<int> graph, int num_vehicles, int master) {
     return 0;
 }
 
-vector<vector<vector<int>>> genWork(int N, int master, int proc) {
+vector<vector<VRP>> genWork(int N, int master, int proc) {
     vector<int> list;
     list.push_back(master);
 
@@ -230,11 +266,13 @@ vector<vector<vector<int>>> genWork(int N, int master, int proc) {
     }
 
     int i = 0;
-    vector<vector<vector<int>>> work;
+    vector<vector<VRP>> work;
     work.resize(proc);
     for (auto &sg : subgraphs) {
-        work[i % proc].push_back(sg);
-        i++;
+        VRP subprob = {};
+        subprob.list = sg;
+        subprob.numVehicles = 1;
+        work[std::hash<VRP>{}(subprob) % proc].push_back(subprob);
     }
 
     return work;
@@ -290,16 +328,33 @@ int main()
         }
     }
 
-    read_uber_data(matrix);
+    //read_uber_data(matrix);
 
     //printMatrix(matrix, size);
-    int res = solve(matrix, size);
+    //int res = solve(matrix, size);
     //printf("Cost is %d\n", res);
 
     // Vehicle Routing Algo
 
     // Creates 2^(N - 1) subsets divided among proc
-    vector<vector<vector<int>>> work = genWork(size, 0, proc);
+    vector<vector<VRP>> work = genWork(size, 0, proc);
+    unordered_map<VRP, VRPsolution> routeTable;
+
+    for (auto &i : work) {
+        for (auto &j : i) {
+            pair<vector<vector<int>>, int> res = solve(matrix, size, j.list);
+
+            VRPsolution solved;
+            solved.routes = res.first;
+            solved.cost = res.second;
+
+            routeTable.insert({j, solved});
+            //cout << "Cost of " << res.second << endl;
+        }
+    }
+    //cout << routeTable[work[0][0]].cost << endl;
+    
+    
 
     // Distribute to all processes in ring
 
@@ -311,7 +366,8 @@ int main()
 
     // Use hash table and branching algo to find cheapest route
     // The key is (the set of points to visit, num vehicles), and the value is (ordered visits for each vehicle, the cost of the trip)
-    //unordered_map<VRP, pair<vector<vector<int>>, int>> routeTable;
+    
+    //unordered_set<VRP, vector<int>> table;
 
     for (int i = 0; i < size; ++i)
         delete [] matrix[i];
