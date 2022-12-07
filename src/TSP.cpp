@@ -18,6 +18,7 @@ struct VRP {
   vector<int> list;
   int numVehicles;
 
+  // Can you compare vectors with ==?
   friend bool operator==(const VRP& a, const VRP& b) {
     return a.list == b.list && a.numVehicles == b.numVehicles;
   }
@@ -28,7 +29,7 @@ struct VRPsolution {
     int cost;
 };
 
-// Our custom std::hash specialization for Planet
+// Our custom std::hash specialization for VRP
 template <>
 struct std::hash<VRP> {
   size_t operator()(const VRP& p) const noexcept {
@@ -184,10 +185,10 @@ int calcCost(int **matrix_reduced, int size, vector<int> nodes)
 vector<int> printPath(vector<pair<int, int>> const &list) {
     vector<int> res;
     for (int i = 0; (size_t) i < list.size() - 1; i++) {
-        cout << list[i].first << " -> ";
+        //cout << list[i].first << " -> ";
         res.push_back(list[i].first);
     }
-    cout << list[list.size() - 1].first << " -> " << list[list.size() - 1].second << endl;
+    //cout << list[list.size() - 1].first << " -> " << list[list.size() - 1].second << endl;
     res.push_back(list[list.size() - 1].first);
     res.push_back(list[list.size() - 1].second);
     return res;
@@ -249,7 +250,7 @@ pair<vector<vector<int>>, int> solve(int **adjacencyMatrix, int size, vector<int
 //     return 0;
 // }
 
-vector<vector<VRP>> genWork(int N, int master, int proc) {
+vector<VRP> genWork(int N, int master, int proc, int pid) {
     vector<int> list;
     list.push_back(master);
 
@@ -268,13 +269,15 @@ vector<vector<VRP>> genWork(int N, int master, int proc) {
         }
     }
 
-    vector<vector<VRP>> work;
-    work.resize(proc);
+    vector<VRP> work;
     for (auto &sg : subgraphs) {
         VRP subprob = {};
         subprob.list = sg;
         subprob.numVehicles = 1;
-        work[std::hash<VRP>{}(subprob) % proc].push_back(subprob);
+        //cout << sg.size() << endl;
+        if (std::hash<VRP>{}(subprob) % proc == (size_t) pid) {
+            work.push_back(subprob);
+        }
     }
 
     return work;
@@ -285,21 +288,21 @@ vector<vector<VRP>> genWork(int N, int master, int proc) {
 int main(int argc, char *argv[])
 {
     int pid;
-    int nproc;
+    int proc;
 
     // Initialize MPI
     MPI_Init(&argc, &argv);
     // Get process rank
     MPI_Comm_rank(MPI_COMM_WORLD, &pid);
     // Get total number of processes specificed at start of run
-    MPI_Comm_size(MPI_COMM_WORLD, &nproc);
+    MPI_Comm_size(MPI_COMM_WORLD, &proc);
 
     MPI_Barrier(MPI_COMM_WORLD);
-    Timer totalTime;
+    //Timer totalTime;
+    //cout << pid << endl;
 
     int size = 13;
     int N = 13;
-    int proc = 16;
 
     int adjacencyMatrix[N][N] =
     // {
@@ -337,34 +340,31 @@ int main(int argc, char *argv[])
         }
     }
 
+
     //read_uber_data(matrix);
 
     //printMatrix(matrix, size);
-    //int res = solve(matrix, size);
-    //printf("Cost is %d\n", res);
 
     // Vehicle Routing Algo
 
     // Creates 2^(N - 1) subsets divided among proc
-    vector<vector<VRP>> work = genWork(size, 0, proc);
+    vector<VRP> work = genWork(size, 0, proc, pid);
     unordered_map<VRP, VRPsolution> routeTable;
 
-    for (auto &i : work) {
-        for (auto &j : i) {
-            pair<vector<vector<int>>, int> res = solve(matrix, size, j.list);
+    //cout << "size " << work.size() << endl;
 
-            VRPsolution solved;
-            solved.routes = res.first;
-            solved.cost = res.second;
+    for (auto &subProb : work) {
+        pair<vector<vector<int>>, int> res = solve(matrix, size, subProb.list);
 
-            routeTable.insert({j, solved});
-            cout << "Cost of " << res.second << endl;
-        }
+        VRPsolution solved;
+        solved.routes = res.first;
+        solved.cost = res.second;
+
+        routeTable.insert({subProb, solved});
+        //cout << "Cost of " << res.second << endl;
     }
-    //cout << routeTable[work[0][0]].cost << endl;
     
     
-
     // Distribute to all processes in ring
 
     // Process each subset
@@ -375,12 +375,11 @@ int main(int argc, char *argv[])
 
     // Use hash table and branching algo to find cheapest route
     // The key is (the set of points to visit, num vehicles), and the value is (ordered visits for each vehicle, the cost of the trip)
-    
-    //unordered_set<VRP, vector<int>> table;
+
 
     for (int i = 0; i < size; ++i)
         delete [] matrix[i];
     delete [] matrix;
-
-    return 0;
+    
+    MPI_Finalize();
 }
