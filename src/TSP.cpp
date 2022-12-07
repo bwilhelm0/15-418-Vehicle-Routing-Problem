@@ -6,6 +6,8 @@ using namespace std;
 #include <iostream>
 #include <fstream>
 #include <sstream>
+#include <cmath>
+#include <algorithm>
 
 #include "timing.h"
 #include "mpi.h"
@@ -50,36 +52,47 @@ void printMatrix(int **adjacencyMatrix, int size) {
     }
 }
 
-void read_uber_data(int** matrix)
+int** read_uber_data()
 {
 
-  int N = 80; //number of nodes 
-  string fname;
-  vector <string> row;
-  string line, word, temp;
-  vector<vector<string>> content;
-  fname = "uber_condensed.csv";
-  fstream file (fname, ios::in);
+    int size = 64;//number of nodes 
+    string fname;
+    vector <string> row;
+    string line, word, temp;
+    vector<vector<string>> content;
+    fname = "uber_condensed.csv";
+    fstream file (fname, ios::in);
 
-  if (file.is_open()){
-    while(getline(file,line)){
-        row.clear();
-        stringstream str(line);
-        while(getline(str,word,',')){       //CSV are comma deliminated 
-            row.push_back(word);
-            content.push_back(row);
+    if (file.is_open()){
+        while(getline(file,line)){
+            row.clear();
+            stringstream str(line);
+            while(getline(str,word,',')){       //CSV are comma deliminated 
+                row.push_back(word);
+                content.push_back(row);
+            }
         }
-    }
-  } else cout << "Could not open file" << endl;
+    } else cout << "Could not open file" << endl;
 
-  for (int i=0;(size_t) i<content.size();i++){
-    int node1 = stoi(content[i][1]);
-    int node2 = stoi(content[i][2]);
 
-    matrix[node1][node2] = stoi(content[i][3]);
-  }
+    int** matrix = new int*[size];
+    // for (int i = 0; i < size; ++i) {
+    //     matrix[i] = new int[size];
+    //     for (int j = 0; j < size; j++) {
+    //         matrix[i][j] = adjacencyMatrix[i][j];
+    //     }
+    // }
 
-  printMatrix(matrix,N);
+
+    // for (int i=0;(size_t) i<content.size();i++){
+    //     int node1 = stoi(content[i][1]);
+    //     int node2 = stoi(content[i][2]);
+
+    //     matrix[node1][node2] = stoi(content[i][3]);
+    // }
+
+    // printMatrix(matrix,N);
+    return matrix;
 }  
 
 
@@ -185,13 +198,26 @@ int calcCost(int **matrix_reduced, int size, vector<int> nodes)
 vector<int> printPath(vector<pair<int, int>> const &list) {
     vector<int> res;
     for (int i = 0; (size_t) i < list.size() - 1; i++) {
-        //cout << list[i].first << " -> ";
+        cout << list[i].first << " -> ";
         res.push_back(list[i].first);
     }
-    //cout << list[list.size() - 1].first << " -> " << list[list.size() - 1].second << endl;
+    cout << list[list.size() - 1].first << " -> " << list[list.size() - 1].second << endl;
     res.push_back(list[list.size() - 1].first);
     res.push_back(list[list.size() - 1].second);
     return res;
+}
+
+void printRoutes(vector<vector<int>> routes) {
+    int numRoutes = (int) routes.size();
+    for (int route = 0; route < numRoutes; route++) {
+        cout << "Vehicle: " << route << ", ";
+        int nodes = (int) routes[route].size();
+        for (int node = 0; node < nodes - 1; node++) {
+            cout << routes[route][node] << " -> ";
+        }
+        cout << routes[route][nodes - 1] << endl;
+    }
+    return ;
 }
 
 
@@ -203,11 +229,11 @@ public:
     }
 };
 
-pair<vector<vector<int>>, int> solve(int **adjacencyMatrix, int size, vector<int> nodes)
+VRPsolution tspSolve(int **adjacencyMatrix, int size, vector<int> nodes)
 {
     int nodeSize = nodes.size();
     priority_queue<Node*, vector<Node*>, comp> pq;
-    vector<pair<int, int>> v;
+    vector<pair<int,int>> v;
     Node* root = newNode(adjacencyMatrix, size, v, 0, -1, 0);
     root->cost = calcCost(root->matrix_reduced, size, nodes);
     pq.push(root);
@@ -222,7 +248,10 @@ pair<vector<vector<int>>, int> solve(int **adjacencyMatrix, int size, vector<int
             vector<int> finalPath = printPath(min->path);
             vector<vector<int>> wrapped;
             wrapped.push_back(finalPath);
-            return make_pair(wrapped, min->cost);
+            VRPsolution done;
+            done.routes = wrapped;
+            done.cost = min->cost;
+            return done;
         }
 
         for (auto &j : nodes)
@@ -242,13 +271,6 @@ pair<vector<vector<int>>, int> solve(int **adjacencyMatrix, int size, vector<int
         delete min;
     }
 }
-
-// int retrieve_cost(vector<int> graph, int num_vehicles, int master) {
-//     // hash table with graph and number of vehicles as key.
-//     // Solve in branching method where you split a number of vehicles to a certain tsp.
-
-//     return 0;
-// }
 
 vector<VRP> genWork(int N, int master, int proc, int pid) {
     vector<int> list;
@@ -283,6 +305,83 @@ vector<VRP> genWork(int N, int master, int proc, int pid) {
     return work;
 }
 
+//recursive function for solving top down
+VRPsolution subsetSolve(VRP &prob, unordered_map<VRP, VRPsolution> &solnMap, int **matrix, int size, int master) {
+    // TURN THIS INTO A LOOP WITH A VECTOR AS A QUEUE
+    VRPsolution res;
+    unordered_map<VRP, VRPsolution>::const_iterator got = solnMap.find(prob);
+    
+    //if solution already in hashtable, find and return VRPsolution
+    if (got != solnMap.end()) return got->second;
+
+    if (prob.numVehicles == 1) {
+        res = tspSolve(matrix,size,prob.list);
+        solnMap.insert({prob, res});
+        return res;
+    }
+
+    vector<pair<vector<int>, vector<int>>> subsets;
+    for (int i = 0; i < pow(2, prob.list.size()); i++)
+	{
+        vector<int> left;
+        vector<int> right;
+
+		for (int j = 0; (size_t)j < prob.list.size(); j++)
+		{
+            if (j == master) {
+                left.push_back(master);
+                right.push_back(master);
+            } else {
+                if ((i & (1 << j)) == 0) {
+                    left.push_back(prob.list[j]);
+                } else {
+                    right.push_back(prob.list[j]);
+                }
+            }
+		}
+        subsets.push_back(make_pair(left, right));
+	}
+
+    VRPsolution minCost;
+    minCost.cost = INF;
+    for (auto &p : subsets) {
+
+        VRP next1;
+        VRP next2;
+        next1.list = p.first;
+        next2.list = p.second;
+
+        int iters = min(prob.numVehicles, min((int) next1.list.size(), (int) next2.list.size()));
+
+        for (int vehicles = 1; vehicles < iters; vehicles++) {
+            next1.numVehicles = (next1.list.size() < next2.list.size()) ? vehicles : prob.numVehicles - vehicles;
+            next2.numVehicles = (next2.list.size() <= next1.list.size()) ? vehicles : prob.numVehicles - vehicles;
+
+            VRPsolution soln1;
+            VRPsolution soln2;
+
+            // got = solnMap.find(next1);
+            // //if solution already in hashtable, find and return VRPsolution
+            // if (got != solnMap.end()) return got->second;
+            // else 
+            soln1 = subsetSolve(next1, solnMap, matrix, size, master);
+            
+            // got = solnMap.find(next2);
+            // //if solution already in hashtable, find and return VRPsolution
+            // if (got != solnMap.end()) return got->second;
+            // else 
+            soln2 = subsetSolve(next2, solnMap, matrix, size, master);
+
+            if (minCost.cost > soln1.cost + soln2.cost) {
+                soln1.routes.insert(soln1.routes.end(), soln2.routes.begin(), soln2.routes.end());
+                minCost.routes = soln1.routes;
+                minCost.cost = soln1.cost + soln2.cost;
+            }
+        }
+    }
+    return minCost;
+}
+
 
 
 int main(int argc, char *argv[])
@@ -301,7 +400,9 @@ int main(int argc, char *argv[])
     //Timer totalTime;
     //cout << pid << endl;
 
-    int size = 13;
+    int size = 8;
+    int vehicles = 5;
+    int master = 0;
     int N = 13;
 
     int adjacencyMatrix[N][N] =
@@ -345,25 +446,29 @@ int main(int argc, char *argv[])
 
     //printMatrix(matrix, size);
 
-    // Vehicle Routing Algo
-
-    // Creates 2^(N - 1) subsets divided among proc
-    vector<VRP> work = genWork(size, 0, proc, pid);
+    VRP prob;
+    vector<int> allPoints;
+    for(int i = 0; i < size; i++) {
+        allPoints.push_back(i);
+    }
+    prob.list = allPoints;
+    prob.numVehicles = vehicles;
+    
     unordered_map<VRP, VRPsolution> routeTable;
 
-    //cout << "size " << work.size() << endl;
+    // Pre-compute some values
+    // vector<VRP> work = genWork(size, master, proc, pid);
+    // for (auto &subProb : work) {
+    //     VRPsolution solved = tspSolve(matrix, size, subProb.list);
+    //     routeTable.insert({subProb, solved});
+    // }
 
-    for (auto &subProb : work) {
-        pair<vector<vector<int>>, int> res = solve(matrix, size, subProb.list);
+    VRPsolution finished = subsetSolve(prob, routeTable, matrix, size, master);
+    cout << "Cost is " << finished.cost << endl;
+    printRoutes(finished.routes);
+    
 
-        VRPsolution solved;
-        solved.routes = res.first;
-        solved.cost = res.second;
-
-        routeTable.insert({subProb, solved});
-        //cout << "Cost of " << res.second << endl;
-    }
-
+    
     // Ring reduce to update values
 
     // Use hash table and branching algo to find cheapest route
