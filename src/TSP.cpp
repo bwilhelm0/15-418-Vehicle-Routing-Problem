@@ -363,13 +363,6 @@ int main(int argc, char *argv[])
         routeTable.insert({subProb, solved});
         //cout << "Cost of " << res.second << endl;
     }
-    
-    
-    // Distribute to all processes in ring
-
-    // Process each subset
-
-    // Format vectors in order given but points in order of traversal with cost at end of list
 
     // Ring reduce to update values
 
