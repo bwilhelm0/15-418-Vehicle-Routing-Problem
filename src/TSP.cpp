@@ -310,25 +310,120 @@ int getGranularity(VRP &prob) {
 }
 
 //recursive function for solving top down
-VRPsolution subsetSolve(VRP &prob, unordered_map<VRP, VRPsolution> &solnMap, int **matrix, int size, int master) { //, int proc, int pid) {
+VRPsolution subsetSolve(VRP &prob, unordered_map<VRP, VRPsolution> &solnMap, int **matrix, int size, int master, int proc, int pid, int totalP, int totalV) {
     // TURN THIS INTO A LOOP WITH A VECTOR AS A QUEUE
+    const int requestSize = totalP + 1;        //totalPoints + 1 because we send the number of vehicles as well
+    const int answerSize = totalP + totalV;   //In message there should be a 0 for each vehicle, this is largest possible message size
+
+
+    //check for requests
+    int flags = int[proc];
+    for (int i = 0; i < proc; i++) {
+        if (i == pid) continue;
+        MPI_Iprobe(i, MPI_ANY_TAG, MPI_COMM_WORLD, &flags[i], MPI_IGNORE_STATUS);
+    }
+
+    vector<vector<int>> filledReqs;
+    vector<MPI_STATUS> filledReqStatus;
+    for (int i = 0; i < proc; i++) {
+        if (flags[i] != 0) {
+            VRP req;
+            req.list.resize(requestSize);
+            MPI_Recv((void *) req.list.data(), requestSize, MPI_INT, i, MPI_ANY_TAG, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+
+            req.numVehicles = req.list[requestSize - 1];
+            for (int i = requestSize - 2; i > 0; i--) {
+                if (req.list[i] != 0) {
+                    req.list.resize(i + 1);
+                    break;
+                }
+            }
+
+
+            unordered_map<VRP, VRPsolution>::const_iterator foundit = solnMap.find(req);
+
+            vector<int> answerVal;
+            answerVal.resize(answerSize);
+            MPI_Request *answerReq = new answerReq;
+
+            if (foundit != solnMap.end()) {
+                // Found case, send solution
+                answerVal[0] = foundit->second.cost;
+                int pos = 1;
+                for (auto &journey : foundit->second.routes) {
+                    copy(journey.begin(), journey.end(), answerVal.begin() + pos);
+                    pos += journey.size() - 1;
+                }
+                
+                MPI_Isend((void *) answerVal.data(), answerSize, MPI_INT, i, 0, MPI_COMM_WORLD, answerReq);
+            } else {
+                // Not found case, send 0 vector
+                MPI_Isend((void *) answerVal.data(), answerSize, MPI_INT, i, 0, MPI_COMM_WORLD, answerReq);
+            }
+            filledReqs.push_back(answerVal);
+            filledReqStatus.push_back(answerReq);
+        }
+    }
+    
     VRPsolution res;
     unordered_map<VRP, VRPsolution>::const_iterator got = solnMap.find(prob);
 
-    //check for requests
-    
     //if solution already in hashtable, find and return VRPsolution
-    if (got != solnMap.end()) return got->second;
+    if (got != solnMap.end()) {
+        //MPI_Waitall();
+        return got->second;
+    }
     else if (prob.numVehicles == 1) {
         res = tspSolve(matrix,size,prob.list);
         solnMap.insert({prob, res});
+        //MPI_Waitall();
         return res;
     } 
-    // else if (getGranularity(prob) > GRANULARITY && (hash<VRP>{}(prob) % proc != pid)) {
-    //     communicate
-    //     add to hash table
-    //     return value
-    // }
+    else if (getGranularity(prob) > GRANULARITY && (hash<VRP>{}(prob) % proc != pid)) {
+        int hashedProc = hash<VRP>{}(prob) % proc;
+        
+        vector<int> request;
+        request.resize(requestSize);
+        vector<int> answer;
+        answer.resize(answerSize);
+
+        copy(prob.list.begin(), prob.list.end(), request.begin() + 1);
+        request[requestSize-1] = prob.numVehicles;
+
+        // Request solution to problem
+        MPI_Send((void *) request.data(), requestSize, MPI_INT, hashedProc, 0, MPI_COMM_WORLD);
+
+        // Receive solution if it has been solved
+        MPI_Recv((void *) answer.data(), answerSize, MPI_INT, hashedProc, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+
+        // Checks if this was solved or not (first element should be cost, if -1, not solved)
+        if (answer[0] > 0) {
+            VRPsolution currSolution;
+            currSolution.cost = answer[0];
+
+            vector<int> path;
+            int zeros = 0; 
+            for (int i = 1; i < recvSize; i++) {
+                if (answer[i] == 0) {
+                    if (zeros != 0) {
+                        path.push_back(answer[i]);
+                        currSolution.routes.push_back(path);
+                        path.resize(0);         //resize 0 because we insert
+                    }
+                    zeros += 1;
+
+                    if (zeros > prob.numVehicles) {
+                        break;
+                    }
+                }
+                path.push_back(answer[i]);
+            }
+            // Add solution to hash table
+            solnMap.insert({prob, currSolution});
+            //MPI_Waitall();
+            return currSolution;
+        }
+    }
 
     vector<pair<vector<int>, vector<int>>> subsets;
     for (int i = 2; i < pow(2, prob.list.size() - 1); i+=2) { // check - 1
@@ -362,9 +457,9 @@ VRPsolution subsetSolve(VRP &prob, unordered_map<VRP, VRPsolution> &solnMap, int
         int minlen = min((int) next1.list.size() - 1, (int) next2.list.size() - 1);
         int fulllen = next1.list.size() + next2.list.size() - 2;
 
-        int begin = (prob.numVehicles - maxlen > 1) ? (prob.numVehicles - maxlen) : 1;
+        int begin = (prob.numVehicles <= maxlen) ? 1 : (prob.numVehicles - maxlen);
         //int iters = min(prob.numVehicles - 1, min((int) next1.list.size() - 1, (int) next2.list.size() - 1));
-        int iters = (prob.numVehicles - 1 <= minlen) ? prob.numVehicles - 1 : fulllen - (prob.numVehicles - 1);
+        int iters = (prob.numVehicles <= maxlen) ? fulllen - prob.numVehicles : prob.numVehicles - 1;
         //cout << "Begin and Iteration:  " << begin << "," << iters << endl;
         for (int vehicles = begin; vehicles < iters + begin; vehicles++) {
             next1.numVehicles = (next1.list.size() < next2.list.size()) ? vehicles : prob.numVehicles - vehicles;
@@ -402,6 +497,7 @@ VRPsolution subsetSolve(VRP &prob, unordered_map<VRP, VRPsolution> &solnMap, int
             }
         }
     }
+    //MPI_Waitall();
     return minCost;
 }
 
