@@ -20,6 +20,12 @@ using namespace std;
 struct VRP {
   vector<int> list;
   int numVehicles;
+  int master; 
+  int proc;
+  int pid;
+  int originalP;
+  int originalV;
+  int printPaths;
 
   // Can you compare vectors with ==?
   friend bool operator==(const VRP& a, const VRP& b) {
@@ -158,26 +164,6 @@ void reduce(int**matrix_reduced, int *row, int *col, int size, vector<int> nodes
         for (auto &j : nodes)
             if (matrix_reduced[i][j] != INF && col[j] != INF)
                 matrix_reduced[i][j] -= col[j];
-
-    // for (int i = 0; i < size; i++)
-    //     for (int j = 0; j < size; j++)
-    //         if (matrix_reduced[i][j] < row[i])
-    //             row[i] = matrix_reduced[i][j];
-
-    // for (int i = 0; i < size; i++)
-    //     for (int j = 0; j < size; j++)
-    //         if (matrix_reduced[i][j] != INF && row[i] != INF)
-    //             matrix_reduced[i][j] -= row[i];
-
-    // for (int i = 0; i < size; i++)
-    //     for (int j = 0; j < size; j++)
-    //         if (matrix_reduced[i][j] < col[j])
-    //             col[j] = matrix_reduced[i][j];
-
-    // for (int i = 0; i < size; i++)
-    //     for (int j = 0; j < size; j++)
-    //         if (matrix_reduced[i][j] != INF && col[j] != INF)
-    //             matrix_reduced[i][j] -= col[j];
 }
 
 int calcCost(int **matrix_reduced, int size, vector<int> nodes)
@@ -196,13 +182,13 @@ int calcCost(int **matrix_reduced, int size, vector<int> nodes)
     return cost;
 }
 
-vector<int> printPath(vector<pair<int, int>> const &list) {
+vector<int> printPath(vector<pair<int, int>> const &list, bool printOn) {
     vector<int> res;
     for (int i = 0; (size_t) i < list.size() - 1; i++) {
-        //cout << list[i].first << " -> ";
+        if(printOn) cout << list[i].first << " -> ";
         res.push_back(list[i].first);
     }
-    //cout << list[list.size() - 1].first << " -> " << list[list.size() - 1].second << endl;
+    if(printOn) cout << list[list.size() - 1].first << " -> " << list[list.size() - 1].second << endl;
     res.push_back(list[list.size() - 1].first);
     res.push_back(list[list.size() - 1].second);
     return res;
@@ -229,7 +215,7 @@ public:
     }
 };
 
-VRPsolution tspSolve(int **adjacencyMatrix, int size, vector<int> nodes)
+VRPsolution tspSolve(int **adjacencyMatrix, int size, vector<int> nodes, bool printOn)
 {
     int nodeSize = nodes.size();
     priority_queue<Node*, vector<Node*>, comp> pq;
@@ -245,7 +231,7 @@ VRPsolution tspSolve(int **adjacencyMatrix, int size, vector<int> nodes)
         if (min->level == nodeSize - 1)
         {
             min->path.push_back(make_pair(i, 0));
-            vector<int> finalPath = printPath(min->path);
+            vector<int> finalPath = printPath(min->path, printOn);
             vector<vector<int>> wrapped;
             wrapped.push_back(finalPath);
             VRPsolution done;
@@ -310,22 +296,22 @@ int getGranularity(VRP &prob) {
 }
 
 //recursive function for solving top down
-VRPsolution subsetSolve(VRP &prob, unordered_map<VRP, VRPsolution> &solnMap, int **matrix, int size, int master, int proc, int pid, int totalP, int totalV) {
+VRPsolution subsetSolve(VRP &prob, unordered_map<VRP, VRPsolution> &solnMap, int **matrix, int size) {
     // TURN THIS INTO A LOOP WITH A VECTOR AS A QUEUE
-    const int requestSize = totalP + 1;        //totalPoints + 1 because we send the number of vehicles as well
-    const int answerSize = totalP + totalV;   //In message there should be a 0 for each vehicle, this is largest possible message size
+    const int requestSize = prob.originalP + 1;        //totalPoints + 1 because we send the number of vehicles as well
+    const int answerSize = prob.originalP + prob.originalV;   //In message there should be a 0 for each vehicle, this is largest possible message size
 
 
     //check for requests
-    // int *flags = new int[proc];
-    // for (int i = 0; i < proc; i++) {
-    //     if (i == pid) continue;
+    // int *flags = new int[prob.proc];
+    // for (int i = 0; i < prob.proc; i++) {
+    //     if (i == prob.pid) continue;
     //     MPI_Iprobe(i, MPI_ANY_TAG, MPI_COMM_WORLD, &flags[i], MPI_STATUS_IGNORE);
     // }
 
     // vector<vector<int>> filledReqs;
     // vector<MPI_Request> filledReqStatus;
-    // for (int i = 0; i < proc; i++) {
+    // for (int i = 0; i < prob.proc; i++) {
     //     if (flags[i] != 0) {
     //         VRP req;
     //         req.list.resize(requestSize);
@@ -374,7 +360,7 @@ VRPsolution subsetSolve(VRP &prob, unordered_map<VRP, VRPsolution> &solnMap, int
         return got->second;
     }
     else if (prob.numVehicles == 1) {
-        res = tspSolve(matrix,size,prob.list);
+        res = tspSolve(matrix, size, prob.list, prob.printPaths);
         solnMap.insert({prob, res});
         //MPI_Waitall(filledReqStatus.size(), filledReqStatus.data(), MPI_STATUSES_IGNORE);
         return res;
@@ -431,9 +417,9 @@ VRPsolution subsetSolve(VRP &prob, unordered_map<VRP, VRPsolution> &solnMap, int
         vector<int> right;
 
 		for (int j = 0; (size_t)j < prob.list.size(); j++) {
-            if (j == master) {
-                left.push_back(master);
-                right.push_back(master);
+            if (j == prob.master) {
+                left.push_back(prob.master);
+                right.push_back(prob.master);
             } else {
                 if ((i & (1 << j)) == 0) {
                     left.push_back(prob.list[j]);
@@ -451,12 +437,24 @@ VRPsolution subsetSolve(VRP &prob, unordered_map<VRP, VRPsolution> &solnMap, int
         VRP next1;
         VRP next2;
         next1.list = p.first;
+        next1.master = prob.master;
+        next1.proc = prob.proc;
+        next1.pid = prob.pid;
+        next1.originalP = prob.originalP;
+        next1.originalV = prob.originalV;
+        next1.printPaths = prob.printPaths;
+        
         next2.list = p.second;
+        next2.master = prob.master;
+        next2.proc = prob.proc;
+        next2.pid = prob.pid;
+        next2.originalP = prob.originalP;
+        next2.originalV = prob.originalV;
+        next2.printPaths = prob.printPaths;
 
 
         int maxlen = max(next1.list.size() - 1, next2.list.size() - 1);
         int minlen = min((int) next1.list.size() - 1, (int) next2.list.size() - 1);
-        int fulllen = next1.list.size() + next2.list.size() - 2;
 
         int smallVehicles = 1;
         int largeVehicles = prob.numVehicles - 1;
@@ -470,10 +468,6 @@ VRPsolution subsetSolve(VRP &prob, unordered_map<VRP, VRPsolution> &solnMap, int
             next1.numVehicles = (next1.list.size() < next2.list.size()) ? smallVehicles : largeVehicles;
             next2.numVehicles = (next1.list.size() < next2.list.size()) ? largeVehicles : smallVehicles;
 
-            vector<vector<int>> doub;
-            doub.push_back(next1.list);
-            doub.push_back(next2.list);
-
             VRPsolution soln1;
             VRPsolution soln2;
 
@@ -482,24 +476,18 @@ VRPsolution subsetSolve(VRP &prob, unordered_map<VRP, VRPsolution> &solnMap, int
             // if (got != solnMap.end()) return got->second;
             // else 
             
-            soln1 = subsetSolve(next1, solnMap, matrix, size, master, proc, pid, totalP, totalV);
+            soln1 = subsetSolve(next1, solnMap, matrix, size);
             
             // got = solnMap.find(next2);
             // //if solution already in hashtable, find and return VRPsolution
             // if (got != solnMap.end()) return got->second;
             // else 
-            soln2 = subsetSolve(next2, solnMap, matrix, size, master, proc, pid, totalP, totalV);
+            soln2 = subsetSolve(next2, solnMap, matrix, size);
 
             if (minTime.time > max(soln1.time, soln2.time)) {
                 soln1.routes.insert(soln1.routes.end(), soln2.routes.begin(), soln2.routes.end());
                 minTime.routes = soln1.routes;
                 minTime.time = max(soln1.time, soln2.time);
-            }
-            if (prob.numVehicles == 4 && (next1.numVehicles > next1.list.size() - 1 || next2.numVehicles > next2.list.size() - 1)) {
-                cout << "Next1 Vehicles: " << next1.numVehicles << endl;
-                cout << "Next2 Vehicles: " << next2.numVehicles << endl;
-                cout << (soln1.time + soln2.time) << endl;
-                printRoutes(doub);
             }
             
             smallVehicles += 1;
@@ -532,6 +520,7 @@ int main(int argc, char *argv[])
     int vehicles = 2;
     int master = 0;
     int N = 13;
+    bool printPaths = false;
 
     int adjacencyMatrix[N][N] =
     // {
@@ -582,6 +571,12 @@ int main(int argc, char *argv[])
     }
     prob.list = allPoints;
     prob.numVehicles = vehicles;
+    prob.master = master; 
+    prob.proc = proc;
+    prob.pid = pid;
+    prob.originalP = allPoints.size();
+    prob.originalV = vehicles;
+    prob.printPaths = printPaths;
     
     unordered_map<VRP, VRPsolution> routeTable;
 
@@ -592,7 +587,7 @@ int main(int argc, char *argv[])
     //     routeTable.insert({subProb, solved});
     // }
 
-    VRPsolution finished = subsetSolve(prob, routeTable, matrix, size, master, proc, pid, prob.list.size(), prob.numVehicles);
+    VRPsolution finished = subsetSolve(prob, routeTable, matrix, size);
     cout << "Time is " << finished.time << endl;
     printRoutes(finished.routes);
     
