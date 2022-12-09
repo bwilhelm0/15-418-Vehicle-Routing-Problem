@@ -80,7 +80,6 @@ vector<VRP> genWork(int N, int master, int proc, int pid) {
         VRP subprob = {};
         subprob.list = sg;
         subprob.numVehicles = 1;
-        //cout << sg.size() << endl;
         if (std::hash<VRP>{}(subprob) % proc == (size_t) pid) {
             work.push_back(subprob);
         }
@@ -101,53 +100,54 @@ VRPsolution subsetSolve(VRP &prob, unordered_map<VRP, VRPsolution> &solnMap, int
 
 
     //check for requests
-    // int *flags = new int[prob.proc];
-    // for (int i = 0; i < prob.proc; i++) {
-    //     if (i == prob.pid) continue;
-    //     MPI_Iprobe(i, MPI_ANY_TAG, MPI_COMM_WORLD, &flags[i], MPI_STATUS_IGNORE);
-    // }
+    int *flags = new int[prob.proc];
+    for (int i = 0; i < prob.proc; i++) {
+        if (i == prob.pid) continue;
+        MPI_Iprobe(i, MPI_ANY_TAG, MPI_COMM_WORLD, &flags[i], MPI_STATUS_IGNORE);
+    }
 
-    // vector<vector<int>> filledReqs;
-    // vector<MPI_Request> filledReqStatus;
-    // for (int i = 0; i < prob.proc; i++) {
-    //     if (flags[i] != 0) {
-    //         VRP req;
-    //         req.list.resize(requestSize);
-    //         MPI_Recv((void *) req.list.data(), requestSize, MPI_INT, i, MPI_ANY_TAG, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+    vector<vector<int>> filledReqs;
+    vector<MPI_Request> filledReqStatus;
+    for (int i = 0; i < prob.proc; i++) {
+        if (i == prob.pid) continue;
+        if (flags[i] != 0) {
+            VRP req;
+            req.list.resize(requestSize);
+            MPI_Recv((void *) req.list.data(), requestSize, MPI_INT, i, MPI_ANY_TAG, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
 
-    //         req.numVehicles = req.list[requestSize - 1];
-    //         for (int i = requestSize - 2; i > 0; i--) {
-    //             if (req.list[i] != 0) {
-    //                 req.list.resize(i + 1);
-    //                 break;
-    //             }
-    //         }
+            req.numVehicles = req.list[requestSize - 1];
+            for (int i = requestSize - 2; i > 0; i--) {
+                if (req.list[i] != 0) {
+                    req.list.resize(i + 1);
+                    break;
+                }
+            }
 
 
-    //         unordered_map<VRP, VRPsolution>::const_iterator foundit = solnMap.find(req);
+            unordered_map<VRP, VRPsolution>::const_iterator foundit = solnMap.find(req);
 
-    //         vector<int> answerVal;
-    //         answerVal.resize(answerSize);
-    //         MPI_Request answerReq;
+            vector<int> answerVal;
+            answerVal.resize(answerSize);
+            MPI_Request answerReq;
 
-    //         if (foundit != solnMap.end()) {
-    //             // Found case, send solution
-    //             answerVal[0] = foundit->second.time;
-    //             int pos = 1;
-    //             for (auto &journey : foundit->second.routes) {
-    //                 copy(journey.begin(), journey.end(), answerVal.begin() + pos);
-    //                 pos += journey.size() - 1;
-    //             }
+            if (foundit != solnMap.end()) {
+                // Found case, send solution
+                answerVal[0] = foundit->second.time;
+                int pos = 1;
+                for (auto &journey : foundit->second.routes) {
+                    copy(journey.begin(), journey.end(), answerVal.begin() + pos);
+                    pos += journey.size() - 1;
+                }
                 
-    //             MPI_Isend((void *) answerVal.data(), answerSize, MPI_INT, i, 0, MPI_COMM_WORLD, &answerReq);
-    //         } else {
-    //             // Not found case, send 0 vector
-    //             MPI_Isend((void *) answerVal.data(), answerSize, MPI_INT, i, 0, MPI_COMM_WORLD, &answerReq);
-    //         }
-    //         filledReqs.push_back(answerVal);
-    //         filledReqStatus.push_back(answerReq);
-    //     }
-    // }
+                MPI_Isend((void *) answerVal.data(), answerSize, MPI_INT, i, 0, MPI_COMM_WORLD, &answerReq);
+            } else {
+                // Not found case, send 0 vector
+                MPI_Isend((void *) answerVal.data(), answerSize, MPI_INT, i, 0, MPI_COMM_WORLD, &answerReq);
+            }
+            filledReqs.push_back(answerVal);
+            filledReqStatus.push_back(answerReq);
+        }
+    }
     
     VRPsolution res;
     unordered_map<VRP, VRPsolution>::const_iterator got = solnMap.find(prob);
@@ -156,58 +156,56 @@ VRPsolution subsetSolve(VRP &prob, unordered_map<VRP, VRPsolution> &solnMap, int
     if (got != solnMap.end()) {
         //MPI_Waitall(filledReqStatus.size(), filledReqStatus.data(), MPI_STATUSES_IGNORE);
         return got->second;
-    }
-    else if (prob.numVehicles == 1) {
+    } else if (prob.numVehicles == 1) {
         res = tspSolve(matrix, size, prob.list, prob.printPaths);
         solnMap.insert({prob, res});
         //MPI_Waitall(filledReqStatus.size(), filledReqStatus.data(), MPI_STATUSES_IGNORE);
         return res;
-    } 
-    // else if (getGranularity(prob) > GRANULARITY && (hash<VRP>{}(prob) % proc != pid)) {
-    //     int hashedProc = hash<VRP>{}(prob) % proc;
+    } else if (getGranularity(prob) > GRANULARITY && (hash<VRP>{}(prob) % prob.proc != prob.pid)) {
+        int hashedProc = hash<VRP>{}(prob) % prob.proc;
         
-    //     vector<int> request;
-    //     request.resize(requestSize);
-    //     vector<int> answer;
-    //     answer.resize(answerSize);
+        vector<int> request;
+        request.resize(requestSize);
+        vector<int> answer;
+        answer.resize(answerSize);
 
-    //     copy(prob.list.begin(), prob.list.end(), request.begin() + 1);
-    //     request[requestSize-1] = prob.numVehicles;
+        copy(prob.list.begin(), prob.list.end(), request.begin() + 1);
+        request[requestSize-1] = prob.numVehicles;
 
-    //     // Request solution to problem
-    //     MPI_Send((void *) request.data(), requestSize, MPI_INT, hashedProc, 0, MPI_COMM_WORLD);
+        // Request solution to problem
+        MPI_Send((void *) request.data(), requestSize, MPI_INT, hashedProc, 0, MPI_COMM_WORLD);
 
-    //     // Receive solution if it has been solved
-    //     MPI_Recv((void *) answer.data(), answerSize, MPI_INT, hashedProc, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+        // Receive solution if it has been solved
+        MPI_Recv((void *) answer.data(), answerSize, MPI_INT, hashedProc, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
 
-    //     // Checks if this was solved or not (first element should be cost, if -1, not solved)
-    //     if (answer[0] > 0) {
-    //         VRPsolution currSolution;
-    //         currSolution.time = answer[0];
+        // Checks if this was solved or not (first element should be cost, if -1, not solved)
+        if (answer[0] > 0) {
+            VRPsolution currSolution;
+            currSolution.time = answer[0];
 
-    //         vector<int> path;
-    //         int masters = 0; 
-    //         for (int i = 1; i < answerSize; i++) {
-    //             if (answer[i] == master) {
-    //                 if (masters != 0) {
-    //                     path.push_back(answer[i]);
-    //                     currSolution.routes.push_back(path);
-    //                     path.resize(0);         //resize 0 because we insert
-    //                 }
-    //                 masters += 1;
+            vector<int> path;
+            int masters = 0; 
+            for (int i = 1; i < answerSize; i++) {
+                if (answer[i] == prob.master) {
+                    if (masters != 0) {
+                        path.push_back(answer[i]);
+                        currSolution.routes.push_back(path);
+                        path.resize(0);         //resize 0 because we insert
+                    }
+                    masters += 1;
 
-    //                 if (masters > prob.numVehicles) {
-    //                     break;
-    //                 }
-    //             }
-    //             path.push_back(answer[i]);
-    //         }
-    //         // Add solution to hash table
-    //         solnMap.insert({prob, currSolution});
-    //         MPI_Waitall(filledReqStatus.size(), filledReqStatus.data(), MPI_STATUSES_IGNORE);
-    //         return currSolution;
-    //     }
-    // }
+                    if (masters > prob.numVehicles) {
+                        break;
+                    }
+                }
+                path.push_back(answer[i]);
+            }
+            // Add solution to hash table
+            solnMap.insert({prob, currSolution});
+            MPI_Waitall(filledReqStatus.size(), filledReqStatus.data(), MPI_STATUSES_IGNORE);
+            return currSolution;
+        }
+    }
 
     vector<pair<vector<int>, vector<int>>> subsets;
     for (int i = 2; i < pow(2, prob.list.size() - 1); i+=2) { // check - 1
@@ -303,8 +301,8 @@ int main(int argc, char *argv[])
     MPI_Barrier(MPI_COMM_WORLD);
     //Timer totalTime;
 
-    int size = 13;
-    int vehicles = 2;
+    int size = 8;
+    int vehicles = 4;
     int master = 0; // Keep at 0 until debugged
     int N = 13;
     bool printPaths = false;
@@ -364,8 +362,10 @@ int main(int argc, char *argv[])
     unordered_map<VRP, VRPsolution> routeTable;
 
     VRPsolution finished = subsetSolve(prob, routeTable, matrix, size);
-    cout << "Time is " << finished.time << endl;
-    printRoutes(finished.routes);
+    if (pid == 0) {
+        cout << "Time is " << finished.time << endl;
+        printRoutes(finished.routes);
+    }
 
     for (int i = 0; i < size; ++i)
         delete [] matrix[i];
