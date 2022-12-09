@@ -14,6 +14,7 @@ using namespace std;
 #include "omp.h"
 
 #define INF numeric_limits<int>::max()
+#define GRANULARITY 128
 
 
 struct VRP {
@@ -198,10 +199,10 @@ int calcCost(int **matrix_reduced, int size, vector<int> nodes)
 vector<int> printPath(vector<pair<int, int>> const &list) {
     vector<int> res;
     for (int i = 0; (size_t) i < list.size() - 1; i++) {
-        cout << list[i].first << " -> ";
+        //cout << list[i].first << " -> ";
         res.push_back(list[i].first);
     }
-    cout << list[list.size() - 1].first << " -> " << list[list.size() - 1].second << endl;
+    //cout << list[list.size() - 1].first << " -> " << list[list.size() - 1].second << endl;
     res.push_back(list[list.size() - 1].first);
     res.push_back(list[list.size() - 1].second);
     return res;
@@ -217,7 +218,6 @@ void printRoutes(vector<vector<int>> routes) {
         }
         cout << routes[route][nodes - 1] << endl;
     }
-    return ;
 }
 
 
@@ -305,29 +305,37 @@ vector<VRP> genWork(int N, int master, int proc, int pid) {
     return work;
 }
 
+int getGranularity(VRP &prob) {
+    return pow(2, prob.list.size()) * prob.numVehicles;
+}
+
 //recursive function for solving top down
-VRPsolution subsetSolve(VRP &prob, unordered_map<VRP, VRPsolution> &solnMap, int **matrix, int size, int master) {
+VRPsolution subsetSolve(VRP &prob, unordered_map<VRP, VRPsolution> &solnMap, int **matrix, int size, int master) { //, int proc, int pid) {
     // TURN THIS INTO A LOOP WITH A VECTOR AS A QUEUE
     VRPsolution res;
     unordered_map<VRP, VRPsolution>::const_iterator got = solnMap.find(prob);
+
+    //check for requests
     
     //if solution already in hashtable, find and return VRPsolution
     if (got != solnMap.end()) return got->second;
-
-    if (prob.numVehicles == 1) {
+    else if (prob.numVehicles == 1) {
         res = tspSolve(matrix,size,prob.list);
         solnMap.insert({prob, res});
         return res;
-    }
+    } 
+    // else if (getGranularity(prob) > GRANULARITY && (hash<VRP>{}(prob) % proc != pid)) {
+    //     communicate
+    //     add to hash table
+    //     return value
+    // }
 
     vector<pair<vector<int>, vector<int>>> subsets;
-    for (int i = 0; i < pow(2, prob.list.size()); i++)
-	{
+    for (int i = 2; i < pow(2, prob.list.size() - 1); i+=2) { // check - 1
         vector<int> left;
         vector<int> right;
 
-		for (int j = 0; (size_t)j < prob.list.size(); j++)
-		{
+		for (int j = 0; (size_t)j < prob.list.size(); j++) {
             if (j == master) {
                 left.push_back(master);
                 right.push_back(master);
@@ -345,17 +353,26 @@ VRPsolution subsetSolve(VRP &prob, unordered_map<VRP, VRPsolution> &solnMap, int
     VRPsolution minCost;
     minCost.cost = INF;
     for (auto &p : subsets) {
-
         VRP next1;
         VRP next2;
         next1.list = p.first;
         next2.list = p.second;
 
-        int iters = min(prob.numVehicles, min((int) next1.list.size(), (int) next2.list.size()));
+        int maxlen = max(next1.list.size() - 1, next2.list.size() - 1);
+        int minlen = min((int) next1.list.size() - 1, (int) next2.list.size() - 1);
+        int fulllen = next1.list.size() + next2.list.size() - 2;
 
-        for (int vehicles = 1; vehicles < iters; vehicles++) {
+        int begin = (prob.numVehicles - maxlen > 1) ? (prob.numVehicles - maxlen) : 1;
+        //int iters = min(prob.numVehicles - 1, min((int) next1.list.size() - 1, (int) next2.list.size() - 1));
+        int iters = (prob.numVehicles - 1 <= minlen) ? prob.numVehicles - 1 : fulllen - (prob.numVehicles - 1);
+        //cout << "Begin and Iteration:  " << begin << "," << iters << endl;
+        for (int vehicles = begin; vehicles < iters + begin; vehicles++) {
             next1.numVehicles = (next1.list.size() < next2.list.size()) ? vehicles : prob.numVehicles - vehicles;
-            next2.numVehicles = (next2.list.size() <= next1.list.size()) ? vehicles : prob.numVehicles - vehicles;
+            next2.numVehicles = (next1.list.size() < next2.list.size()) ? prob.numVehicles - vehicles : vehicles;
+
+            vector<vector<int>> doub;
+            doub.push_back(next1.list);
+            doub.push_back(next2.list);
 
             VRPsolution soln1;
             VRPsolution soln2;
@@ -376,6 +393,12 @@ VRPsolution subsetSolve(VRP &prob, unordered_map<VRP, VRPsolution> &solnMap, int
                 soln1.routes.insert(soln1.routes.end(), soln2.routes.begin(), soln2.routes.end());
                 minCost.routes = soln1.routes;
                 minCost.cost = soln1.cost + soln2.cost;
+            }
+            if (prob.numVehicles == 4 && (next1.numVehicles > next1.list.size() - 1 || next2.numVehicles > next2.list.size() - 1)) {
+                cout << "Next1 Vehicles: " << next1.numVehicles << endl;
+                cout << "Next2 Vehicles: " << next2.numVehicles << endl;
+                cout << (soln1.cost + soln2.cost) << endl;
+                printRoutes(doub);
             }
         }
     }
