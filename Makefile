@@ -15,7 +15,7 @@ endif
 HEADERS := src/*.h
 SOURCES := src/*.cpp
 
-TARGETBIN := TSP-$(CONFIGURATION)
+TARGETBIN := VRP-$(CONFIGURATION)
 
 CXX = mpic++
 
@@ -31,7 +31,7 @@ format:
 	clang-format -i src/*.cpp src/*.h
 
 clean:
-	rm -rf ./TSP-$(CONFIGURATION)*
+	rm -rf ./VRP-$(CONFIGURATION)*
 
 FILES = src/*.cpp \
 		src/*.h
