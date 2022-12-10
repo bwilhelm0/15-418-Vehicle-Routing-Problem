@@ -17,7 +17,7 @@ using namespace std;
 #include "omp.h"
 
 #define INF numeric_limits<int>::max()
-#define GRANULARITY 20
+#define GRANULARITY 1
 
 // TSP DEFINITIONS
 class Node

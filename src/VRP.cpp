@@ -92,13 +92,11 @@ int getGranularity(VRP &prob) {
     return pow(2, prob.list.size()) * prob.numVehicles;
 }
 
-//recursive function for solving top down
-VRPsolution subsetSolve(VRP &prob, unordered_map<VRP, VRPsolution> &solnMap, int **matrix, int size) {
-    // TURN THIS INTO A LOOP WITH A VECTOR AS A QUEUE
+
+//checks for incoming data requests and responds
+pair<vector<vector<int>>, vector<MPI_Request>> fillRequests(VRP &prob, unordered_map<VRP, VRPsolution> &solnMap) {
     const int requestSize = prob.originalP + 1;        //totalPoints + 1 because we send the number of vehicles as well
     const int answerSize = prob.originalP + prob.originalV;   //In message there should be a 0 for each vehicle, this is largest possible message size
-
-
     //check for requests
     int *flags = new int[prob.proc];
     for (int i = 0; i < prob.proc; i++) {
@@ -111,9 +109,11 @@ VRPsolution subsetSolve(VRP &prob, unordered_map<VRP, VRPsolution> &solnMap, int
     for (int i = 0; i < prob.proc; i++) {
         if (i == prob.pid) continue;
         if (flags[i] != 0) {
+            cout << "communicate to " << i << "from " << prob.pid << endl;
             VRP req;
             req.list.resize(requestSize);
             MPI_Recv((void *) req.list.data(), requestSize, MPI_INT, i, MPI_ANY_TAG, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+            cout << "communicate to " << i << "from " << prob.pid << "passed " << endl;
 
             req.numVehicles = req.list[requestSize - 1];
             for (int i = requestSize - 2; i > 0; i--) {
@@ -148,22 +148,38 @@ VRPsolution subsetSolve(VRP &prob, unordered_map<VRP, VRPsolution> &solnMap, int
             filledReqStatus.push_back(answerReq);
         }
     }
+    return make_pair(filledReqs, filledReqStatus);
+}
+
+//recursive function for solving top down
+VRPsolution subsetSolve(VRP &prob, unordered_map<VRP, VRPsolution> &solnMap, int **matrix, int size) {
+    // TURN THIS INTO A LOOP WITH A VECTOR AS A QUEUE
+    const int requestSize = prob.originalP + 1;        //totalPoints + 1 because we send the number of vehicles as well
+    const int answerSize = prob.originalP + prob.originalV;   //In message there should be a 0 for each vehicle, this is largest possible message size
+
+
+    pair<vector<vector<int>>, vector<MPI_Request>> currentlyFilling = fillRequests(prob, solnMap);
+    vector<MPI_Request> filledReqStatus = currentlyFilling.second;
+    vector<vector<int>> filledReqs = currentlyFilling.first;
+    
     
     VRPsolution res;
     unordered_map<VRP, VRPsolution>::const_iterator got = solnMap.find(prob);
 
     //if solution already in hashtable, find and return VRPsolution
     if (got != solnMap.end()) {
-        //MPI_Waitall(filledReqStatus.size(), filledReqStatus.data(), MPI_STATUSES_IGNORE);
+        MPI_Waitall(filledReqStatus.size(), filledReqStatus.data(), MPI_STATUSES_IGNORE);
         return got->second;
     } else if (prob.numVehicles == 1) {
         res = tspSolve(matrix, size, prob.list, prob.printPaths);
         solnMap.insert({prob, res});
-        //MPI_Waitall(filledReqStatus.size(), filledReqStatus.data(), MPI_STATUSES_IGNORE);
+        MPI_Waitall(filledReqStatus.size(), filledReqStatus.data(), MPI_STATUSES_IGNORE);
         return res;
-    } else if (getGranularity(prob) > GRANULARITY && (hash<VRP>{}(prob) % prob.proc != prob.pid)) {
+    } else if (getGranularity(prob) > GRANULARITY && (hash<VRP>{}(prob) % prob.proc != prob.pid) && 
+              (prob.numVehicles != prob.originalV && (int) prob.list.size() != prob.originalP)) {
         int hashedProc = hash<VRP>{}(prob) % prob.proc;
         
+        cout << "request communication from " << hashedProc << " to " << prob.pid << endl;
         vector<int> request;
         request.resize(requestSize);
         vector<int> answer;
@@ -175,8 +191,28 @@ VRPsolution subsetSolve(VRP &prob, unordered_map<VRP, VRPsolution> &solnMap, int
         // Request solution to problem
         MPI_Send((void *) request.data(), requestSize, MPI_INT, hashedProc, 0, MPI_COMM_WORLD);
 
-        // Receive solution if it has been solved
-        MPI_Recv((void *) answer.data(), answerSize, MPI_INT, hashedProc, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+        // Asynch Receive solution if it has been solved, keep checking for sends while waiting to avoid deadlock
+        MPI_Request recRequest;
+        MPI_Irecv((void *) answer.data(), answerSize, MPI_INT, hashedProc, 0, MPI_COMM_WORLD, &recRequest);
+
+        //manually check if receive request was completed 
+        int recFlag = 0;
+        MPI_Request_get_status(recRequest,&recFlag,MPI_STATUS_IGNORE);
+        
+        // Fill requests until the packet has been received
+        while (!recFlag) {
+            pair<vector<vector<int>>, vector<MPI_Request>> newFills = fillRequests(prob, solnMap);
+            
+            for (auto &path : newFills.first) {
+                filledReqs.push_back(path);
+            }
+
+            for (auto &status : newFills.second) {
+                filledReqStatus.push_back(status);
+            }
+
+            MPI_Request_get_status(recRequest,&recFlag,MPI_STATUS_IGNORE);
+        }
 
         // Checks if this was solved or not (first element should be cost, if -1, not solved)
         if (answer[0] > 0) {
@@ -280,7 +316,7 @@ VRPsolution subsetSolve(VRP &prob, unordered_map<VRP, VRPsolution> &solnMap, int
             largeVehicles -= 1;
         }
     }
-    //MPI_Waitall(filledReqStatus.size(), filledReqStatus.data(), MPI_STATUSES_IGNORE);
+    MPI_Waitall(filledReqStatus.size(), filledReqStatus.data(), MPI_STATUSES_IGNORE);
     return minTime;
 }
 
@@ -362,10 +398,11 @@ int main(int argc, char *argv[])
     unordered_map<VRP, VRPsolution> routeTable;
 
     VRPsolution finished = subsetSolve(prob, routeTable, matrix, size);
-    if (pid == 0) {
+    
+    //if (pid == 0) {
         cout << "Time is " << finished.time << endl;
         printRoutes(finished.routes);
-    }
+    //}
 
     for (int i = 0; i < size; ++i)
         delete [] matrix[i];
