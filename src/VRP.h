@@ -17,7 +17,7 @@ using namespace std;
 #include "omp.h"
 
 #define INF numeric_limits<int>::max()
-#define GRANULARITY 1
+#define GRANULARITY 100
 
 // TSP DEFINITIONS
 class Node
@@ -45,7 +45,7 @@ public:
 struct VRP {
   vector<int> list;
   int numVehicles;
-  int master; 
+  int master;
   int proc;
   int pid;
   int originalP;
