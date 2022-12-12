@@ -122,7 +122,7 @@ pair<vector<vector<int>>, vector<MPI_Request>> fillRequests(VRP &prob, unordered
     int *flags = new int[prob.proc];
     for (int i = 0; i < prob.proc; i++) {
         if (i == prob.pid) continue;
-        MPI_Iprobe(i, MPI_ANY_TAG, MPI_COMM_WORLD, &flags[i], MPI_STATUS_IGNORE);
+        MPI_Iprobe(i, REQUEST, MPI_COMM_WORLD, &flags[i], MPI_STATUS_IGNORE);
     }
 
     vector<vector<int>> filledReqs;
@@ -133,7 +133,7 @@ pair<vector<vector<int>>, vector<MPI_Request>> fillRequests(VRP &prob, unordered
         if (i == prob.pid) continue;
         if (flags[i] != 0) {
             req.list.resize(requestSize);
-            MPI_Recv((void *) req.list.data(), requestSize, MPI_INT, i, MPI_ANY_TAG, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+            MPI_Recv((void *) req.list.data(), requestSize, MPI_INT, i, REQUEST, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
 
             req.numVehicles = req.list[requestSize - 1];
             for (int i = requestSize - 2; i > 0; i--) {
@@ -159,9 +159,9 @@ pair<vector<vector<int>>, vector<MPI_Request>> fillRequests(VRP &prob, unordered
                     pos += journey.size() - 1;
                 }
 
-                MPI_Isend((void *) answerVal.data(), answerSize, MPI_INT, i, 0, MPI_COMM_WORLD, &answerReq);
+                MPI_Isend((void *) answerVal.data(), answerSize, MPI_INT, i, ANSWER, MPI_COMM_WORLD, &answerReq);
             } else {
-                MPI_Isend((void *) answerVal.data(), answerSize, MPI_INT, i, 0, MPI_COMM_WORLD, &answerReq);
+                MPI_Isend((void *) answerVal.data(), answerSize, MPI_INT, i, ANSWER, MPI_COMM_WORLD, &answerReq);
             }
             filledReqs.push_back(answerVal);
             filledReqStatus.push_back(answerReq);
@@ -191,11 +191,11 @@ VRPsolution reqSoln(VRP &prob, unordered_map<VRP, VRPsolution> &solnMap) {
 
     //while (answer[0] == 0) {
         // Request solution to problem
-        MPI_Send((void *) request.data(), requestSize, MPI_INT, hashedProc, 0, MPI_COMM_WORLD);
+        MPI_Send((void *) request.data(), requestSize, MPI_INT, hashedProc, REQUEST, MPI_COMM_WORLD);
 
         // Asynch Receive solution if it has been solved, keep checking for sends while waiting to avoid deadlock
         MPI_Request recRequest;
-        MPI_Irecv((void *) answer.data(), answerSize, MPI_INT, hashedProc, 0, MPI_COMM_WORLD, &recRequest);
+        MPI_Irecv((void *) answer.data(), answerSize, MPI_INT, hashedProc, ANSWER, MPI_COMM_WORLD, &recRequest);
 
         //manually check if receive request was completed
         int recFlag = 0;
@@ -243,6 +243,94 @@ VRPsolution reqSoln(VRP &prob, unordered_map<VRP, VRPsolution> &solnMap) {
     solnMap.insert({prob, currSolution});
     MPI_Waitall(filledReqStatus.size(), filledReqStatus.data(), MPI_STATUSES_IGNORE);
     return currSolution;
+}
+
+
+pair<vector<vector<int>>, vector<MPI_Request>> syncLevel(VRP &prob, unordered_map<VRP, VRPsolution> &solnMap) {
+    //totalPoints + 1 because we send the number of vehicles as well
+    const int requestSize = prob.originalP + 1;
+
+    //In message there should be a 0 for each vehicle, this is largest possible message size
+    const int answerSize = prob.originalP + prob.originalV;
+
+    vector<vector<int>> filledReqs;
+    vector<MPI_Request> filledReqStatus;
+    vector<int> sVec;
+    sVec.resize(1);
+
+    MPI_Request syncReq;
+    for (int i = 0; i < prob.proc; i++) { 
+        if (i == prob.pid) continue;
+        MPI_Isend((void *) sVec.data(), 1, MPI_INT, i, LEVEL_SYNC, MPI_COMM_WORLD, &syncReq);
+        filledReqStatus.push_back(syncReq);
+    }
+
+    vector<int> readySync;
+    readySync.resize(prob.proc);
+    int syncReady = 0;
+    while (!syncReady) {
+        //check for requests
+        int *flags = new int[prob.proc];
+        int *syncFlags = new int[prob.proc];
+        for (int i = 0; i < prob.proc; i++) {
+            if (i == prob.pid) continue;
+            MPI_Iprobe(i, REQUEST, MPI_COMM_WORLD, &flags[i], MPI_STATUS_IGNORE);
+            MPI_Iprobe(i, LEVEL_SYNC, MPI_COMM_WORLD, &syncFlags[i], MPI_STATUS_IGNORE);
+        }
+
+        VRP req;
+
+        syncReady = 1;
+        for (int i = 0; i < prob.proc; i++) {
+            if (i == prob.pid) continue;
+
+            if (syncFlags[i] != 0) {
+                req.list.resize(1);
+                MPI_Recv((void *) req.list.data(), 1, MPI_INT, i, LEVEL_SYNC, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+                readySync[i] = 1;
+            } else if (readySync[i] != 1) {
+                syncReady = 0;
+            }
+
+            if (flags[i] != 0) {
+                req.list.resize(requestSize);
+                MPI_Recv((void *) req.list.data(), requestSize, MPI_INT, i, REQUEST, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+
+                req.numVehicles = req.list[requestSize - 1];
+                for (int i = requestSize - 2; i > 0; i--) {
+                    if (req.list[i] != 0) { 
+                        req.list.resize(i + 1);
+                        break;
+                    }
+                }
+
+
+                unordered_map<VRP, VRPsolution>::const_iterator foundit = solnMap.find(req);
+
+                vector<int> answerVal;
+                answerVal.resize(answerSize);
+                MPI_Request answerReq;
+
+                if (foundit != solnMap.end()) {
+                    // Found case, send solution
+                    answerVal[0] = foundit->second.time;
+                    int pos = 1;
+                    for (auto &journey : foundit->second.routes) {
+                        copy(journey.begin(), journey.end(), answerVal.begin() + pos);
+                        pos += journey.size() - 1;
+                    }
+
+                    MPI_Isend((void *) answerVal.data(), answerSize, MPI_INT, i, ANSWER, MPI_COMM_WORLD, &answerReq);
+                } else {
+                    MPI_Isend((void *) answerVal.data(), answerSize, MPI_INT, i, ANSWER, MPI_COMM_WORLD, &answerReq);
+                }
+                filledReqs.push_back(answerVal);
+                filledReqStatus.push_back(answerReq);
+            }
+        }
+    }
+
+    return make_pair(filledReqs, filledReqStatus);
 }
 
 
@@ -325,8 +413,8 @@ int main(int argc, char *argv[])
     MPI_Barrier(MPI_COMM_WORLD);
     Timer totalTime;
 
-    int size = 8;
-    int vehicles = 3;
+    int size = 13;
+    int vehicles = 6;
     int master = 0; // Keep at 0 until debugged
     int N = 13;
     bool printPaths = false;
@@ -413,7 +501,8 @@ int main(int argc, char *argv[])
         }
         allSubs = validSubs;
         cout << pid << ": level " << nVehicles << " complete, table size: " << routeTable.size() << endl;
-        syncLevel(prob, routeTable);
+        pair<vector<vector<int>>, vector<MPI_Request>> newFills = syncLevel(prob, routeTable);
+        MPI_Waitall(newFills.second.size(), newFills.second.data(), MPI_STATUSES_IGNORE);
     }
 
     if ((int) (hash<VRP>{}(prob) % proc) == pid) {

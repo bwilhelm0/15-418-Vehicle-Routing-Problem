@@ -75,6 +75,8 @@ struct std::hash<VRP> {
   }
 };
 
+enum MSG_TAG {LEVEL_SYNC = 0, REQUEST, ANSWER};
+
 
 // TSP Function
 VRPsolution tspSolve(int **adjacencyMatrix, int size, vector<int> nodes, bool printOn);
