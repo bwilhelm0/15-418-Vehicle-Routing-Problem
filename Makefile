@@ -3,7 +3,7 @@ OUTPUTDIR := bin/
 CFLAGS := -std=c++14 -fvisibility=hidden -lpthread -Wall -Wextra
 
 ifeq (,$(CONFIGURATION))
-	CONFIGURATION := release
+	CONFIGURATION := debug
 endif
 
 ifeq (debug,$(CONFIGURATION))

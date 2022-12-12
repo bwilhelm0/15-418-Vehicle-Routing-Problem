@@ -24,6 +24,8 @@ struct StartupOptions {
   int vehicles;
   int seed;
   bool printPaths;
+  bool reduceComm;
+  bool timeLevels;
   std::string inputFile;
 };
 
@@ -31,6 +33,8 @@ inline StartupOptions parseOptions(int argc, char *argv[]) {
   StartupOptions rs;
   rs.printPaths = false;
   rs.seed = -1;
+  rs.reduceComm = true;
+  rs.timeLevels = false;
   for (int i = 1; i < argc; i++) {
     if (strcmp(argv[i], "-n") == 0)
       rs.nodes = atoi(argv[i + 1]);
@@ -40,6 +44,10 @@ inline StartupOptions parseOptions(int argc, char *argv[]) {
       rs.printPaths = true;
     else if (strcmp(argv[i], "-s") == 0)
       rs.seed = atoi(argv[i + 1]);
+    else if (strcmp(argv[i], "-l") == 0)
+      rs.reduceComm = false;
+    else if (strcmp(argv[i], "-t") == 0)
+      rs.timeLevels = true;
   }
   return rs;
 }
@@ -77,6 +85,7 @@ struct VRP {
   int originalP;
   int originalV;
   int printPaths;
+  bool reduceComm;
 
   // Can you compare vectors with ==?
   friend bool operator==(const VRP& a, const VRP& b) {
@@ -101,7 +110,8 @@ struct std::hash<VRP> {
   }
 };
 
-enum MSG_TAG {LEVEL_SYNC = 0, REQUEST, ANSWER};
+// Enum to distinguish message types
+enum MSG_TAG {LEVEL_SYNC = 0, REQUEST, REQUEST_COST, REQUEST_ROUTES, ANSWER, ANSWER_COST, ANSWER_ROUTES};
 
 
 // TSP Function
