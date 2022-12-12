@@ -11,6 +11,7 @@ using namespace std;
 #include <sstream>
 #include <cmath>
 #include <algorithm>
+#include <random>
 
 #include "timing.h"
 #include "mpi.h"
@@ -21,16 +22,24 @@ using namespace std;
 struct StartupOptions {
   int nodes;
   int vehicles;
+  int seed;
+  bool printPaths;
   std::string inputFile;
 };
 
 inline StartupOptions parseOptions(int argc, char *argv[]) {
   StartupOptions rs;
+  rs.printPaths = false;
+  rs.seed = -1;
   for (int i = 1; i < argc; i++) {
     if (strcmp(argv[i], "-n") == 0)
       rs.nodes = atoi(argv[i + 1]);
     else if (strcmp(argv[i], "-v") == 0)
       rs.vehicles = atoi(argv[i + 1]);
+    else if (strcmp(argv[i], "-p") == 0)
+      rs.printPaths = true;
+    else if (strcmp(argv[i], "-s") == 0)
+      rs.seed = atoi(argv[i + 1]);
   }
   return rs;
 }

@@ -413,47 +413,34 @@ int main(int argc, char *argv[])
     int size = config.nodes;
     int vehicles = config.vehicles;
     int master = 0; // Keep at 0 until debugged
-    int N = 13;
-    bool printPaths = false;
+    bool printPaths = config.printPaths;
 
+    // Seed random matrix generation
+    if (config.seed == -1) {
+        srand(time(NULL));
+    } else {
+        srand(config.seed);
+    }
 
-    int adjacencyMatrix[N][N] =
-    // {
-    //     {INF, 2},
-    //     {2, INF}
-    // };
-    // {
-    //     { INF, 20,  30,  10,  11, 16},
-    //     { 15,  INF, 16,  10,  10, 17},
-    //     { 10,   10,   INF, 10, 10, 18},
-    //     { 19,  10,   18,  INF, 10, 19},
-    //     { 16, 14,   17,   16,  INF, 20},
-    //     { 23, 18,   21,   15,  24, INF}
-    // };
-    {
-      {INF, 2451, 713, 1018, 1631, 1374, 2408, 213, 2571, 875, 1420, 2145, 1972},
-      {2451, INF, 1745, 1524, 831, 1240, 959, 2596, 403, 1589, 1374, 357, 579},
-      {713, 1745, INF, 355, 920, 803, 1737, 851, 1858, 262, 940, 1453, 1260},
-      {1018, 1524, 355, INF, 700, 862, 1395, 1123, 1584, 466, 1056, 1280, 987},
-      {1631, 831, 920, 700, INF, 663, 1021, 1769, 949, 796, 879, 586, 371},
-      {1374, 1240, 803, 862, 663, INF, 1681, 1551, 1765, 547, 225, 887, 999},
-      {2408, 959, 1737, 1395, 1021, 1681, INF, 2493, 678, 1724, 1891, 1114, 701},
-      {213, 2596, 851, 1123, 1769, 1551, 2493, INF, 2699, 1038, 1605, 2300, 2099},
-      {2571, 403, 1858, 1584, 949, 1765, 678, 2699, INF, 1744, 1645, 653, 600},
-      {875, 1589, 262, 466, 796, 547, 1724, 1038, 1744, INF, 679, 1272, 1162},
-      {1420, 1374, 940, 1056, 879, 225, 1891, 1605, 1645, 679, INF, 1017, 1200},
-      {2145, 357, 1453, 1280, 586, 887, 1114, 2300, 653, 1272, 1017, INF, 504},
-      {1972, 579, 1260, 987, 371, 999, 701, 2099, 600, 1162, 1200, 504, INF},
-    };
+    vector<int> mVec;
+    mVec.resize(size * size);
+    if (pid == 0) {
+        for (int i = 0; i < size; ++i) {
+            for (int j = 0; j < size; j++) {
+                mVec[i * size + j] = (i == j) ? INF : (rand() % 20) + 1;
+            }
+        }
+    }
+    MPI_Bcast(mVec.data(), size * size, MPI_INT, 0, MPI_COMM_WORLD);
 
     int** matrix = new int*[size];
     for (int i = 0; i < size; ++i) {
         matrix[i] = new int[size];
         for (int j = 0; j < size; j++) {
-            matrix[i][j] = adjacencyMatrix[i][j];
+            matrix[i][j] = mVec[i * size + j];
         }
     }
-
+    
     MPI_Barrier(MPI_COMM_WORLD);
     Timer totalTime;
 
@@ -506,7 +493,6 @@ int main(int argc, char *argv[])
     }
 
     if ((int) (hash<VRP>{}(prob) % proc) == pid) {
-        //cout << pid << ": working on final" << endl;
         VRPsolution res = vrpSolve(prob, routeTable, matrix, size);
         cout << "Time Cost is " << res.time << endl;
         printRoutes(res.routes);
@@ -516,9 +502,9 @@ int main(int argc, char *argv[])
     pair<vector<vector<int>>, vector<MPI_Request>> newFills = syncLevel(prob, routeTable);
     MPI_Waitall(newFills.second.size(), newFills.second.data(), MPI_STATUSES_IGNORE);
 
-    for (int i = 0; i < size; i++)
-        delete [] matrix[i];
-    delete [] matrix;
+    // for (int i = 0; i < size; i++)
+    //     delete [] matrix[i];
+    // delete [] matrix;
 
 
     MPI_Finalize();
