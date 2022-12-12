@@ -17,7 +17,24 @@ using namespace std;
 #include "omp.h"
 
 #define INF numeric_limits<int>::max()
-#define GRANULARITY 1
+
+struct StartupOptions {
+  int nodes;
+  int vehicles;
+  std::string inputFile;
+};
+
+inline StartupOptions parseOptions(int argc, char *argv[]) {
+  StartupOptions rs;
+  for (int i = 1; i < argc; i++) {
+    if (strcmp(argv[i], "-n") == 0)
+      rs.nodes = atoi(argv[i + 1]);
+    else if (strcmp(argv[i], "-v") == 0)
+      rs.vehicles = atoi(argv[i + 1]);
+  }
+  return rs;
+}
+
 
 // TSP DEFINITIONS
 class Node

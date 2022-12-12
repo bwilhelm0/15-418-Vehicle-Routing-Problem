@@ -188,34 +188,31 @@ VRPsolution reqSoln(VRP &prob, unordered_map<VRP, VRPsolution> &solnMap) {
     copy(prob.list.begin(), prob.list.end(), request.begin());
     request[requestSize-1] = prob.numVehicles;
 
+    // Request solution to problem
+    MPI_Send((void *) request.data(), requestSize, MPI_INT, hashedProc, REQUEST, MPI_COMM_WORLD);
 
-    //while (answer[0] == 0) {
-        // Request solution to problem
-        MPI_Send((void *) request.data(), requestSize, MPI_INT, hashedProc, REQUEST, MPI_COMM_WORLD);
+    // Asynch Receive solution if it has been solved, keep checking for sends while waiting to avoid deadlock
+    MPI_Request recRequest;
+    MPI_Irecv((void *) answer.data(), answerSize, MPI_INT, hashedProc, ANSWER, MPI_COMM_WORLD, &recRequest);
 
-        // Asynch Receive solution if it has been solved, keep checking for sends while waiting to avoid deadlock
-        MPI_Request recRequest;
-        MPI_Irecv((void *) answer.data(), answerSize, MPI_INT, hashedProc, ANSWER, MPI_COMM_WORLD, &recRequest);
+    //manually check if receive request was completed
+    int recFlag = 0;
+    MPI_Request_get_status(recRequest, &recFlag, MPI_STATUS_IGNORE);
 
-        //manually check if receive request was completed
-        int recFlag = 0;
-        MPI_Request_get_status(recRequest, &recFlag, MPI_STATUS_IGNORE);
+    // Fill requests until the packet has been received
+    while (!recFlag) {
+        pair<vector<vector<int>>, vector<MPI_Request>> newFills = fillRequests(prob, solnMap);
 
-        // Fill requests until the packet has been received
-        while (!recFlag) {
-            pair<vector<vector<int>>, vector<MPI_Request>> newFills = fillRequests(prob, solnMap);
-
-            for (auto &path : newFills.first) {
-                filledReqs.push_back(path);
-            }
-
-            for (auto &status : newFills.second) {
-                filledReqStatus.push_back(status);
-            }
-
-            MPI_Request_get_status(recRequest, &recFlag, MPI_STATUS_IGNORE);
+        for (auto &path : newFills.first) {
+            filledReqs.push_back(path);
         }
-    //}
+
+        for (auto &status : newFills.second) {
+            filledReqStatus.push_back(status);
+        }
+
+        MPI_Request_get_status(recRequest, &recFlag, MPI_STATUS_IGNORE);
+    }
 
         
     VRPsolution currSolution;
@@ -257,6 +254,7 @@ pair<vector<vector<int>>, vector<MPI_Request>> syncLevel(VRP &prob, unordered_ma
     vector<MPI_Request> filledReqStatus;
     vector<int> sVec;
     sVec.resize(1);
+    filledReqs.push_back(sVec);
 
     MPI_Request syncReq;
     for (int i = 0; i < prob.proc; i++) { 
@@ -410,14 +408,14 @@ int main(int argc, char *argv[])
     // Get total number of processes specificed at start of run
     MPI_Comm_size(MPI_COMM_WORLD, &proc);
 
-    MPI_Barrier(MPI_COMM_WORLD);
-    Timer totalTime;
+    StartupOptions config = parseOptions(argc, argv);
 
-    int size = 13;
-    int vehicles = 6;
+    int size = config.nodes;
+    int vehicles = config.vehicles;
     int master = 0; // Keep at 0 until debugged
     int N = 13;
     bool printPaths = false;
+
 
     int adjacencyMatrix[N][N] =
     // {
@@ -456,6 +454,8 @@ int main(int argc, char *argv[])
         }
     }
 
+    MPI_Barrier(MPI_COMM_WORLD);
+    Timer totalTime;
 
     //verify no empty set and no full set
 
@@ -500,26 +500,26 @@ int main(int argc, char *argv[])
             }
         }
         allSubs = validSubs;
-        cout << pid << ": level " << nVehicles << " complete, table size: " << routeTable.size() << endl;
+        //cout << pid << ": level " << nVehicles << " complete, table size: " << routeTable.size() << endl;
         pair<vector<vector<int>>, vector<MPI_Request>> newFills = syncLevel(prob, routeTable);
         MPI_Waitall(newFills.second.size(), newFills.second.data(), MPI_STATUSES_IGNORE);
     }
 
     if ((int) (hash<VRP>{}(prob) % proc) == pid) {
-        cout << pid << ": working on final" << endl;
+        //cout << pid << ": working on final" << endl;
         VRPsolution res = vrpSolve(prob, routeTable, matrix, size);
         cout << "Time Cost is " << res.time << endl;
         printRoutes(res.routes);
-    } else {
-        cout << pid << ": filling requests" << endl;
-        while (1) {
-            fillRequests(prob, routeTable);
-        }
-    }
+        double elapsedTime = totalTime.elapsed();
+        cout << "Took " << elapsedTime << " seconds" << endl;
+    } 
+    pair<vector<vector<int>>, vector<MPI_Request>> newFills = syncLevel(prob, routeTable);
+    MPI_Waitall(newFills.second.size(), newFills.second.data(), MPI_STATUSES_IGNORE);
 
     for (int i = 0; i < size; i++)
         delete [] matrix[i];
     delete [] matrix;
+
 
     MPI_Finalize();
 }
