@@ -41,7 +41,7 @@ inline StartupOptions parseOptions(int argc, char *argv[]) {
   rs.reduceComm = true;
   rs.timeLevels = false;
   rs.printMatrix = false;
-  rs.ringReduce = true;
+  rs.ringReduce = false;
   for (int i = 1; i < argc; i++) {
     if (strcmp(argv[i], "-n") == 0)
       rs.nodes = atoi(argv[i + 1]);
@@ -57,8 +57,8 @@ inline StartupOptions parseOptions(int argc, char *argv[]) {
       rs.timeLevels = true;
     else if (strcmp(argv[i], "-M") == 0)
       rs.printMatrix = true;
-    else if (strcmp(argv[i], "-nR") == 0)
-      rs.ringReduce = false;
+    else if (strcmp(argv[i], "-RR") == 0)
+      rs.ringReduce = true;
   }
   return rs;
 }
@@ -124,9 +124,16 @@ struct std::hash<VRP> {
   }
 };
 
-// Enum to distinguish message types
-enum MSG_TAG {LEVEL_SYNC = 0, REQUEST, REQUEST_COST, REQUEST_ROUTES, ANSWER, ANSWER_COST, ANSWER_ROUTES};
-
+// Enum to distinguish message types, REDUCE must be the last tag in the enum
+enum MSG_TAG {LEVEL_SYNC = 0, 
+              REQUEST = 1, 
+              REQUEST_COST = 2, 
+              REQUEST_ROUTES = 3, 
+              ANSWER = 4, 
+              ANSWER_COST = 5, 
+              ANSWER_ROUTES = 6, 
+              REDUCE = 7,
+              REDUCE_DATA = 8};
 
 // TSP Function to be called at base level in VRP
 void printMatrix(int **adjacencyMatrix, int size);
