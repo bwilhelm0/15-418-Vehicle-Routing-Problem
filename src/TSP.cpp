@@ -1,15 +1,27 @@
 using namespace std;
 #include "VRP.h"
 
+// Function to visualize the matrix being used for the TSP
 void printMatrix(int **adjacencyMatrix, int size) {
-    for (int row = 0; row < size; row++) {
+    for (int row = -1; row < size; row++) {
+        if (row != -1) cout << row << ":\t";
+        else cout << "\t";
         for (int col = 0; col < size - 1; col++) {
-            cout << adjacencyMatrix[row][col] << ", ";
+            if (row == -1) {cout << col << "\t"; continue;}
+            int printVal = adjacencyMatrix[row][col];
+            if (printVal == INF) cout << "INF" << ",\t";
+            else cout << printVal << ",\t";
         }
-        cout << adjacencyMatrix[row][size - 1] << endl;
+
+        if (row == -1) {cout << size - 1 << "\t" << endl; continue;}
+
+        int printVal = adjacencyMatrix[row][size - 1];
+        if (printVal == INF) cout << "INF" << "\t" << endl;
+        else cout << printVal << "\t" << endl;
     }
 }
 
+// Creates a new node in the branch and bound decision tree
 Node* newNode(int **matrix_parent, int size, vector<pair<int, int>> const &path, int level, int i, int j)
 {
     Node* node = new Node;
@@ -37,6 +49,7 @@ Node* newNode(int **matrix_parent, int size, vector<pair<int, int>> const &path,
     return node;
 }
 
+// Performs row and column matrix reduction
 void reduce(int**matrix_reduced, int *row, int *col, int size, vector<int> nodes)
 {
     fill_n(row, size, INF);
@@ -63,6 +76,7 @@ void reduce(int**matrix_reduced, int *row, int *col, int size, vector<int> nodes
                 matrix_reduced[i][j] -= col[j];
 }
 
+// Calculates the cose of performing the matrix reduction
 int calcCost(int **matrix_reduced, int size, vector<int> nodes)
 {
     int row[size];
@@ -79,6 +93,7 @@ int calcCost(int **matrix_reduced, int size, vector<int> nodes)
     return cost;
 }
 
+// Prints the path that the TSP took to solving the problem
 vector<int> printPath(vector<pair<int, int>> const &list, bool printOn) {
     vector<int> res;
     for (int i = 0; (size_t) i < list.size() - 1; i++) {
@@ -91,7 +106,7 @@ vector<int> printPath(vector<pair<int, int>> const &list, bool printOn) {
     return res;
 }
 
-
+// Performs the branch and bound search algorithm using matrix reduction and a priority queue
 VRPsolution tspSolve(int **adjacencyMatrix, int size, vector<int> nodes, bool printOn)
 {
     int nodeSize = nodes.size();

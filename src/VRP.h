@@ -17,8 +17,10 @@ using namespace std;
 #include "mpi.h"
 #include "omp.h"
 
+// Int max to be used as infinity
 #define INF numeric_limits<int>::max()
 
+// Struct for storing startup options based on commandline input
 struct StartupOptions {
   int nodes;
   int vehicles;
@@ -26,15 +28,20 @@ struct StartupOptions {
   bool printPaths;
   bool reduceComm;
   bool timeLevels;
+  bool printMatrix;
+  bool ringReduce;
   std::string inputFile;
 };
 
+// Function to parse commandline options into corresponding struct
 inline StartupOptions parseOptions(int argc, char *argv[]) {
   StartupOptions rs;
   rs.printPaths = false;
   rs.seed = -1;
   rs.reduceComm = true;
   rs.timeLevels = false;
+  rs.printMatrix = false;
+  rs.ringReduce = true;
   for (int i = 1; i < argc; i++) {
     if (strcmp(argv[i], "-n") == 0)
       rs.nodes = atoi(argv[i + 1]);
@@ -48,6 +55,10 @@ inline StartupOptions parseOptions(int argc, char *argv[]) {
       rs.reduceComm = false;
     else if (strcmp(argv[i], "-t") == 0)
       rs.timeLevels = true;
+    else if (strcmp(argv[i], "-M") == 0)
+      rs.printMatrix = true;
+    else if (strcmp(argv[i], "-nR") == 0)
+      rs.ringReduce = false;
   }
   return rs;
 }
@@ -73,12 +84,8 @@ public:
 };
 
 
-
-
 // VRP DEFINITIONS
-struct VRP {
-  vector<int> list;
-  int numVehicles;
+struct VRPspecs {
   int master;
   int proc;
   int pid;
@@ -86,13 +93,20 @@ struct VRP {
   int originalV;
   int printPaths;
   bool reduceComm;
+  bool ringReduce;
+};
 
-  // Can you compare vectors with ==?
+struct VRP {
+  vector<int> list;
+  int numVehicles;
+  
+  // Comparison function for hash table lookup
   friend bool operator==(const VRP& a, const VRP& b) {
     return a.list == b.list && a.numVehicles == b.numVehicles;
   }
 };
 
+// The solution struct of a VRP containing routes and cost
 struct VRPsolution {
     vector<vector<int>> routes;
     int time;
@@ -114,7 +128,8 @@ struct std::hash<VRP> {
 enum MSG_TAG {LEVEL_SYNC = 0, REQUEST, REQUEST_COST, REQUEST_ROUTES, ANSWER, ANSWER_COST, ANSWER_ROUTES};
 
 
-// TSP Function
+// TSP Function to be called at base level in VRP
+void printMatrix(int **adjacencyMatrix, int size);
 VRPsolution tspSolve(int **adjacencyMatrix, int size, vector<int> nodes, bool printOn);
 
 #endif
