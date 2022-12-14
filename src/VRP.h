@@ -30,6 +30,7 @@ struct StartupOptions {
   bool timeLevels;
   bool printMatrix;
   bool ringReduce;
+  bool printRequests;
   std::string inputFile;
 };
 
@@ -42,6 +43,7 @@ inline StartupOptions parseOptions(int argc, char *argv[]) {
   rs.timeLevels = false;
   rs.printMatrix = false;
   rs.ringReduce = false;
+  rs.printRequests = false;
   for (int i = 1; i < argc; i++) {
     if (strcmp(argv[i], "-n") == 0)
       rs.nodes = atoi(argv[i + 1]);
@@ -59,6 +61,8 @@ inline StartupOptions parseOptions(int argc, char *argv[]) {
       rs.printMatrix = true;
     else if (strcmp(argv[i], "-RR") == 0)
       rs.ringReduce = true;
+    else if (strcmp(argv[i], "-pR") == 0)
+      rs.printRequests = true;
   }
   return rs;
 }
@@ -92,6 +96,7 @@ struct VRPspecs {
   int originalP;
   int originalV;
   int printPaths;
+  int requests = 0;
   bool reduceComm;
   bool ringReduce;
 };

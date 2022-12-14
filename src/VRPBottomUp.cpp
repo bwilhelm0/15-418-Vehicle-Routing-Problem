@@ -14,6 +14,13 @@ void printRoutes(vector<vector<int>> routes) {
     }
 }
 
+void printList(vector<int> list) {
+    for (auto &n : list) {
+        cout << n << " ";
+    }
+    cout << endl;
+}
+
 // Function to generate the starting subsets based on the N nodes
 vector<vector<int>> genWork(int N, int master) {
     vector<int> list;
@@ -332,21 +339,24 @@ pair<vector<vector<int>>, vector<MPI_Request>> ringReduce(VRP &prob, VRPspecs &i
     vector<vector<int>> filledReqs;
     vector<MPI_Request> filledReqStatus;
 
+    //int totalAdded = 0;
+    //int actualAdded = solnMap.size();
+
     const int requestSize = info.originalP + 1; 
 
     int destProc = (info.proc + info.pid + 1) % info.proc;
     int srcProc = (info.proc + info.pid - 1) % info.proc;
 
     // Message will contain size new hash table entries
-    int dataSize = newSolns.size();
+    int myValSize = newSolns.size();
 
     MPI_Request sizeReq;
     // Send to PID 1 above with the size of hash table entries to be communicated
-    MPI_Isend((void *) &dataSize, 1, MPI_INT, destProc, REDUCE, MPI_COMM_WORLD, &sizeReq);
+    MPI_Isend((void *) &myValSize, 1, MPI_INT, destProc, REDUCE, MPI_COMM_WORLD, &sizeReq);
     filledReqStatus.push_back(sizeReq);
 
     vector<int> myVals;
-    myVals.resize(dataSize * (requestSize + 1));
+    myVals.resize(myValSize * (requestSize + 1));
     
     // Format data as vector..., numVehicles, time
     int pos = 0;
@@ -358,16 +368,18 @@ pair<vector<vector<int>>, vector<MPI_Request>> ringReduce(VRP &prob, VRPspecs &i
 
         // Add newSolns into existing solutions, overwriting because these are complete and they shouldnt be present
         solnMap[it->first] = it->second;
+        //printList(it->first.list);
     }
+    //totalAdded += dataSize;
 
-    MPI_Request dataReq;
+    MPI_Request sendRequest;
     // Send to PID 1 above with the size of hash table entries to be communicated
-    MPI_Isend((void *) myVals.data(), dataSize * (requestSize + 1), MPI_INT, destProc, REDUCE_DATA, MPI_COMM_WORLD, &dataReq);
-    filledReqStatus.push_back(dataReq);
+    MPI_Isend((void *) myVals.data(), myValSize * (requestSize + 1), MPI_INT, destProc, REDUCE_DATA, MPI_COMM_WORLD, &sendRequest);
 
     int newData = 0;
     vector<int> req;
     int reqSize;
+    int sendFlag = 0;
 
     // Iterate through levels of ring reduce
     for (int level = 0; level < info.proc - 1; level++) {
@@ -379,12 +391,18 @@ pair<vector<vector<int>>, vector<MPI_Request>> ringReduce(VRP &prob, VRPspecs &i
             // Check for incoming new data
             MPI_Iprobe(srcProc, REDUCE + 2 * level, MPI_COMM_WORLD, &newData, MPI_STATUS_IGNORE);
         }
+        newData = 0;
 
         // Receive size of data and resize receive buffer
-        MPI_Recv((void *) &reqSize, 1, MPI_INT, srcProc, REDUCE + 2 * level, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-        req.resize(reqSize * (requestSize + 1));
+        if (level % 2 == 0) {
+            MPI_Recv((void *) &reqSize, 1, MPI_INT, srcProc, REDUCE + 2 * level, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+            req.resize(reqSize * (requestSize + 1));
+        } else {
+            MPI_Recv((void *) &myValSize, 1, MPI_INT, srcProc, REDUCE + 2 * level, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+            myVals.resize(myValSize * (requestSize + 1));
+        }
 
-        newData = 0;
+        //totalAdded += reqSize;
         while (!newData) {
             pair<vector<vector<int>>, vector<MPI_Request>> newFills = fillRequests(info, solnMap);
             filledReqs.insert(filledReqs.end(), newFills.first.begin(), newFills.first.end());
@@ -393,52 +411,65 @@ pair<vector<vector<int>>, vector<MPI_Request>> ringReduce(VRP &prob, VRPspecs &i
             // Check for incoming new data
             MPI_Iprobe(srcProc, REDUCE_DATA + 2 * level, MPI_COMM_WORLD, &newData, MPI_STATUS_IGNORE);
         }
-        // Receive actual data
-        MPI_Recv((void *) req.data(), reqSize * (requestSize + 1), MPI_INT, srcProc, REDUCE_DATA + 2 * level, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
         newData = 0;
+
+        if (level % 2 == 0) {
+            // Receive actual data
+            MPI_Recv((void *) req.data(), reqSize * (requestSize + 1), MPI_INT, srcProc, REDUCE_DATA + 2 * level, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+        } else {
+            // Receive size of data and resize receive buffer
+            MPI_Recv((void *) myVals.data(), myValSize * (requestSize + 1), MPI_INT, srcProc, REDUCE_DATA + 2 * level, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+        }
+
+
+        // Fill requests until the send has completed and the level is finished
+        while (!sendFlag) {
+            pair<vector<vector<int>>, vector<MPI_Request>> newFills = fillRequests(info, solnMap);
+            filledReqs.insert(filledReqs.end(), newFills.first.begin(), newFills.first.end());
+            filledReqStatus.insert(filledReqStatus.end(), newFills.second.begin(), newFills.second.end());
+
+            MPI_Request_get_status(sendRequest, &sendFlag, MPI_STATUS_IGNORE);
+        }
+        sendFlag = 0;
 
 
         // Copy data into hash table
-        for (int ind = 0; ind < reqSize * (requestSize + 1); ind+=(requestSize + 1)) {
+        int maxSize = level % 2 == 0 ? reqSize : myValSize;
+        vector<int> temp = level % 2 == 0 ? req : myVals;
+        for (int ind = 0; ind < maxSize * (requestSize + 1); ind+=(requestSize + 1)) {
             VRP incoming;
             VRPsolution inSoln;
-            inSoln.time = req[ind + requestSize];
-            incoming.numVehicles = req[ind + requestSize - 1];
+
+            inSoln.time = temp[ind + requestSize];
+            incoming.numVehicles = temp[ind + requestSize - 1];
 
             int last = ind + requestSize - 2;
             for (; last > ind; last--) {
-                if (req[last] != 0) break;
+                if (temp[last] != 0) break;
             }
 
-            incoming.list.insert(incoming.list.end(), req.begin() + ind, req.begin() + last);
+            incoming.list.insert(incoming.list.end(), temp.begin() + ind, temp.begin() + last + 1);
+            //printList(incoming.list);
 
             // We use insert here because we want it to fail if there is a solution with routes already in the table
             solnMap.insert({incoming, inSoln});
         }
+
         if (level != info.proc - 2) {
             MPI_Request a;
-            // Send to PID 1 above with the size of hash table entries to be communicated
-            MPI_Isend((void *) &reqSize, 1, MPI_INT, destProc, REDUCE + 2 * (level + 1), MPI_COMM_WORLD, &a);
-
-            // Pass on data to next processor
-            MPI_Request sendRequest;
-            // Send to PID 1 above with the size of hash table entries to be communicated
-            MPI_Isend((void *) req.data(), reqSize * (requestSize + 1), MPI_INT, destProc, REDUCE_DATA + 2 * (level + 1), MPI_COMM_WORLD, &sendRequest);
-
-            //manually check if send request was completd
-            int sendFlag = 0;
-            MPI_Request_get_status(sendRequest, &sendFlag, MPI_STATUS_IGNORE);
-
-            // Fill requests until the send has completed and the level is finished
-            while (!sendFlag) {
-                pair<vector<vector<int>>, vector<MPI_Request>> newFills = fillRequests(info, solnMap);
-                filledReqs.insert(filledReqs.end(), newFills.first.begin(), newFills.first.end());
-                filledReqStatus.insert(filledReqStatus.end(), newFills.second.begin(), newFills.second.end());
-
-                MPI_Request_get_status(sendRequest, &sendFlag, MPI_STATUS_IGNORE);
+            if (level % 2 == 0) {
+                MPI_Isend((void *) &reqSize, 1, MPI_INT, destProc, REDUCE + 2 * (level + 1), MPI_COMM_WORLD, &a);
+                // Send to PID 1 above with the size of hash table entries to be communicated
+                MPI_Isend((void *) req.data(), reqSize * (requestSize + 1), MPI_INT, destProc, REDUCE_DATA + 2 * (level + 1), MPI_COMM_WORLD, &sendRequest);
+            } else {
+                MPI_Isend((void *) &myValSize, 1, MPI_INT, destProc, REDUCE + 2 * (level + 1), MPI_COMM_WORLD, &a);
+                // Send to PID 1 above with the size of hash table entries to be communicated
+                MPI_Isend((void *) myVals.data(), myValSize * (requestSize + 1), MPI_INT, destProc, REDUCE_DATA + 2 * (level + 1), MPI_COMM_WORLD, &sendRequest);
             }
         }
     }
+
+    //cout << totalAdded - (solnMap.size() - actualAdded) << endl;
 
     return make_pair(filledReqs, filledReqStatus);
 }
@@ -491,14 +522,18 @@ VRPsolution vrpSolve(VRP &prob, VRPspecs &info, unordered_map<VRP, VRPsolution> 
             } 
             // Otherwise request it
             else {
+                if (info.ringReduce) cout << "Error, should never be here" << endl;
                 soln1 = reqSoln(pairSub.first, info, solnMap, reqTag);
+                info.requests++;
             }
             
             if (gotSecond != solnMap.end()) {
                 soln2 = gotSecond->second;
             } 
             else {
+                if (info.ringReduce) cout << "Error, should never be here" << endl;
                 soln2 = reqSoln(pairSub.second, info, solnMap, reqTag);
+                info.requests++;
             }
 
             if (soln1.time == 0 || soln2.time == 0) {
@@ -525,10 +560,12 @@ VRPsolution vrpSolve(VRP &prob, VRPspecs &info, unordered_map<VRP, VRPsolution> 
     if (reqFirst) {
         VRPsolution first = reqSoln(finalPair.first, info, solnMap, REQUEST_ROUTES);
         res.routes.insert(res.routes.end(), first.routes.begin(), first.routes.end());
+        info.requests++;
     }
     if (reqSecond) {
         VRPsolution second = reqSoln(finalPair.second, info, solnMap, REQUEST_ROUTES);
         res.routes.insert(res.routes.end(), second.routes.begin(), second.routes.end());
+        info.requests++;
     }
 
     // Set result with mincost and routes
@@ -645,7 +682,8 @@ int main(int argc, char *argv[])
         if (config.ringReduce) newFills = ringReduce(prob, info, routeTable, newSolns);
         else newFills = syncLevel(prob, info, routeTable);
         MPI_Waitall(newFills.second.size(), newFills.second.data(), MPI_STATUSES_IGNORE);
-        cout << pid << ": Table sizes " << newSolns.size() << ", " << routeTable.size() << endl;
+        //cout << "finished level" << endl;
+        //cout << pid << ": Table sizes " << newSolns.size() << ", " << routeTable.size() << endl;
     }
 
 
@@ -671,6 +709,14 @@ int main(int argc, char *argv[])
             cout << pid << ": " << levelTimes[i] << endl;
             MPI_Barrier(MPI_COMM_WORLD);
         }
+    }
+
+    if (config.printRequests) {
+        if (pid == 0) cout << "\nRequest summary " << endl;
+        MPI_Barrier(MPI_COMM_WORLD);
+
+        cout << pid << " Number of requests made " << info.requests << endl;
+        MPI_Barrier(MPI_COMM_WORLD);
     }
 
     delete levelTimes;
