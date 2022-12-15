@@ -148,4 +148,6 @@ VRPsolution tspSolve(int **adjacencyMatrix, int size, vector<int> nodes, bool pr
 
         delete min;
     }
+    VRPsolution ihatewarnings = {};
+    return ihatewarnings;
 }

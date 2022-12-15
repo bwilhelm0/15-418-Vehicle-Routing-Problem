@@ -177,11 +177,11 @@ pair<vector<vector<int>>, vector<MPI_Request>> fillRequests(VRPspecs &info, unor
                     }
                 }
 
-                MPI_Isend((void *) answerVal.data(), answerSize, MPI_INT, i, aTag, MPI_COMM_WORLD, &answerReq);
+                MPI_Isend((void *) answerVal.data(), size, MPI_INT, i, aTag, MPI_COMM_WORLD, &answerReq);
             } else { 
                 // Send empty array if not found. This is an error
                 cout << "Error, shouldn't be requesting here" << endl;
-                MPI_Isend((void *) answerVal.data(), answerSize, MPI_INT, i, aTag, MPI_COMM_WORLD, &answerReq);
+                MPI_Isend((void *) answerVal.data(), size, MPI_INT, i, aTag, MPI_COMM_WORLD, &answerReq);
             }
             filledReqs.push_back(answerVal);
             filledReqStatus.push_back(answerReq);
@@ -218,10 +218,13 @@ VRPsolution reqSoln(VRP &prob, VRPspecs &info, unordered_map<VRP, VRPsolution> &
     // Request solution to problem
     MPI_Request myReq; // Unused because it has to be filled to leave function
     MPI_Isend((void *) request.data(), requestSize, MPI_INT, hashedProc, tag, MPI_COMM_WORLD, &myReq);
+    filledReqs.push_back(request);
+    filledReqStatus.push_back(myReq);
 
     // Asynch Receive solution if it has been solved, keep checking for sends while waiting to avoid deadlock
     MPI_Request recRequest;
     MPI_Irecv((void *) answer.data(), answerSize, MPI_INT, hashedProc, answerTag, MPI_COMM_WORLD, &recRequest);
+    filledReqs.push_back(answer);
 
     //manually check if receive request was completed
     int recFlag = 0;
@@ -233,7 +236,6 @@ VRPsolution reqSoln(VRP &prob, VRPspecs &info, unordered_map<VRP, VRPsolution> &
 
         filledReqs.insert(filledReqs.end(), newFills.first.begin(), newFills.first.end());
         filledReqStatus.insert(filledReqStatus.end(), newFills.second.begin(), newFills.second.end());
-
         MPI_Request_get_status(recRequest, &recFlag, MPI_STATUS_IGNORE);
     }
 
@@ -283,7 +285,7 @@ VRPsolution reqSoln(VRP &prob, VRPspecs &info, unordered_map<VRP, VRPsolution> &
 // Function for telling everyone a level is done, and filling requests while waiting
 // TODO revise to sync in a ring, 2 * N communications instead of N^2
 // TODO Modify into ring reduce
-pair<vector<vector<int>>, vector<MPI_Request>> syncLevel(VRP &prob, VRPspecs &info, unordered_map<VRP, VRPsolution> &solnMap) {
+void syncLevel(VRPspecs &info, unordered_map<VRP, VRPsolution> &solnMap) {
     vector<vector<int>> filledReqs;
     vector<MPI_Request> filledReqStatus;
     vector<int> sVec;
@@ -292,11 +294,11 @@ pair<vector<vector<int>>, vector<MPI_Request>> syncLevel(VRP &prob, VRPspecs &in
     sVec.resize(1);
     filledReqs.push_back(sVec);
 
-    MPI_Request syncReq;
     // Send to everyone that pid is finished with level
     for (int i = 0; i < info.proc; i++) { 
         if (i == info.pid) continue;
-        MPI_Isend((void *) sVec.data(), 1, MPI_INT, i, LEVEL_SYNC, MPI_COMM_WORLD, &syncReq);
+        MPI_Request syncReq;
+        MPI_Isend((void *) sVec.data(), 0, MPI_INT, i, LEVEL_SYNC, MPI_COMM_WORLD, &syncReq);
         filledReqStatus.push_back(syncReq);
     }
 
@@ -306,7 +308,8 @@ pair<vector<vector<int>>, vector<MPI_Request>> syncLevel(VRP &prob, VRPspecs &in
     // Wait until everyone is ready for sync
     while (!syncReady) {
         //check for syncs
-        int *syncFlags = new int[info.proc];
+        vector<int> syncFlags;
+        syncFlags.resize(info.proc);
         for (int i = 0; i < info.proc; i++) {
             if (i == info.pid) continue;
             MPI_Iprobe(i, LEVEL_SYNC, MPI_COMM_WORLD, &syncFlags[i], MPI_STATUS_IGNORE);
@@ -319,7 +322,7 @@ pair<vector<vector<int>>, vector<MPI_Request>> syncLevel(VRP &prob, VRPspecs &in
             if (i == info.pid) continue;
             if (syncFlags[i] != 0) {
                 req.list.resize(1);
-                MPI_Recv((void *) req.list.data(), 1, MPI_INT, i, LEVEL_SYNC, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+                MPI_Recv((void *) req.list.data(), 0, MPI_INT, i, LEVEL_SYNC, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
                 readySync[i] = 1;
             } else if (readySync[i] != 1) {
                 syncReady = 0;
@@ -330,12 +333,13 @@ pair<vector<vector<int>>, vector<MPI_Request>> syncLevel(VRP &prob, VRPspecs &in
         filledReqStatus.insert(filledReqStatus.end(), newFills.second.begin(), newFills.second.end());
     }
 
-    return make_pair(filledReqs, filledReqStatus);
+    MPI_Waitall(filledReqStatus.size(), filledReqStatus.data(), MPI_STATUSES_IGNORE);
+    MPI_Barrier(MPI_COMM_WORLD);
 }
 
 
 // Function for reducing the mincosts in the hash tables to every processor
-pair<vector<vector<int>>, vector<MPI_Request>> ringReduce(VRP &prob, VRPspecs &info, unordered_map<VRP, VRPsolution> &solnMap, unordered_map<VRP, VRPsolution> &newSolns) {
+pair<vector<vector<int>>, vector<MPI_Request>> ringReduce(VRPspecs &info, unordered_map<VRP, VRPsolution> &solnMap, unordered_map<VRP, VRPsolution> &newSolns) {
     vector<vector<int>> filledReqs;
     vector<MPI_Request> filledReqStatus;
 
@@ -466,9 +470,11 @@ pair<vector<vector<int>>, vector<MPI_Request>> ringReduce(VRP &prob, VRPspecs &i
                 // Send to PID 1 above with the size of hash table entries to be communicated
                 MPI_Isend((void *) myVals.data(), myValSize * (requestSize + 1), MPI_INT, destProc, REDUCE_DATA + 2 * (level + 1), MPI_COMM_WORLD, &sendRequest);
             }
+            filledReqStatus.push_back(a);
         }
     }
 
+    syncLevel(info, solnMap);
     //cout << totalAdded - (solnMap.size() - actualAdded) << endl;
 
     return make_pair(filledReqs, filledReqStatus);
@@ -679,8 +685,8 @@ int main(int argc, char *argv[])
 
 
         pair<vector<vector<int>>, vector<MPI_Request>> newFills;
-        if (config.ringReduce) newFills = ringReduce(prob, info, routeTable, newSolns);
-        else newFills = syncLevel(prob, info, routeTable);
+        if (config.ringReduce) newFills = ringReduce(info, routeTable, newSolns);
+        else syncLevel(info, routeTable);
         MPI_Waitall(newFills.second.size(), newFills.second.data(), MPI_STATUSES_IGNORE);
         //cout << "finished level" << endl;
         //cout << pid << ": Table sizes " << newSolns.size() << ", " << routeTable.size() << endl;
@@ -696,8 +702,7 @@ int main(int argc, char *argv[])
         cout << "Took " << elapsedTime << " seconds" << endl;
         if (timeLevels) cout << "Level timing info: " << endl;
     } 
-    pair<vector<vector<int>>, vector<MPI_Request>> newFills = syncLevel(prob, info, routeTable);
-    MPI_Waitall(newFills.second.size(), newFills.second.data(), MPI_STATUSES_IGNORE);
+    syncLevel(info, routeTable);
 
     //cout << pid << endl;
 
