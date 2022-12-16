@@ -343,9 +343,6 @@ pair<vector<vector<point>>, vector<MPI_Request>> ringReduce(VRPspecs &info, unor
     vector<vector<point>> filledReqs;
     vector<MPI_Request> filledReqStatus;
 
-    //int totalAdded = 0;
-    //int actualAdded = solnMap.size();
-
     const int requestSize = info.originalP + 1; 
 
     int destProc = (info.proc + info.pid + 1) % info.proc;
@@ -361,20 +358,18 @@ pair<vector<vector<point>>, vector<MPI_Request>> ringReduce(VRPspecs &info, unor
 
     vector<point> myVals;
     myVals.resize(myValSize * (requestSize + INT2P));
-    
+
     // Format data as vector..., numVehicles, time
     int pos = 0;
     for (auto it = newSolns.begin(); it != newSolns.end(); ++it) {
         copy(it->first.list.begin(), it->first.list.end(), myVals.begin() + pos);
-        ((int *)(&myVals[pos + requestSize]))[0] = it->second.time;
+        *((int *)(&myVals[pos + requestSize])) = it->second.time;
         myVals[pos + requestSize - INT2P] = it->first.numVehicles;
         pos += requestSize + INT2P;
 
         // Add newSolns into existing solutions, overwriting because these are complete and they shouldnt be present
         solnMap[it->first] = it->second;
-        //printList(it->first.list);
     }
-    //totalAdded += dataSize;
 
     MPI_Request sendRequest;
     // Send to PID 1 above, these are the hash table entries
@@ -444,7 +439,7 @@ pair<vector<vector<point>>, vector<MPI_Request>> ringReduce(VRPspecs &info, unor
             VRP incoming;
             VRPsolution inSoln;
 
-            inSoln.time = ((int *)(&temp[ind + requestSize]))[0];
+            inSoln.time = *((int *)(&temp[ind + requestSize]));
             incoming.numVehicles = temp[ind + requestSize - INT2P];
 
             int last = ind + requestSize - 1 - INT2P;
