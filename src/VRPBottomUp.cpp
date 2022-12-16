@@ -2,19 +2,19 @@ using namespace std;
 #include "VRP.h"
 
 // Function to print the final routes taken to solve the final problem
-void printRoutes(vector<vector<int>> routes) {
+void printRoutes(vector<vector<point>> routes) {
     int numRoutes = (int) routes.size();
     for (int route = 0; route < numRoutes; route++) {
         cout << "Vehicle: " << route << ", ";
         int nodes = (int) routes[route].size();
         for (int node = 0; node < nodes - 1; node++) {
-            cout << routes[route][node] << " -> ";
+            cout << (int) routes[route][node] << " -> ";
         }
-        cout << routes[route][nodes - 1] << endl;
+        cout << (int) routes[route][nodes - 1] << endl;
     }
 }
 
-void printList(vector<int> list) {
+void printList(vector<point> list) {
     for (auto &n : list) {
         cout << n << " ";
     }
@@ -22,17 +22,17 @@ void printList(vector<int> list) {
 }
 
 // Function to generate the starting subsets based on the N nodes
-vector<vector<int>> genWork(int N, int master) {
-    vector<int> list;
+vector<vector<point>> genWork(point N, point master) {
+    vector<point> list;
     list.push_back(master); // The master node acts as a depot and is always on the list
 
-    vector<vector<int>> subgraphs;
+    vector<vector<point>> subgraphs;
     subgraphs.push_back(list);
 
     // iterate through creating the 2^(N - 1) subsets
-    for (int i = 0; i < N; i++) {
+    for (point i = 0; i < N; i++) {
         if (i != master) {
-            vector<vector<int>> tempgraphs;
+            vector<vector<point>> tempgraphs;
             for (auto &subgraph : subgraphs) {
                 tempgraphs.push_back(subgraph);
                 subgraph.push_back(i);
@@ -43,7 +43,7 @@ vector<vector<int>> genWork(int N, int master) {
     }
 
     // Remove the empty set and the full set, not necessary for bottom up approach
-    vector<vector<int>> res;
+    vector<vector<point>> res;
     if (subgraphs.size() >= 2) {
         res.resize(subgraphs.size() - 2);
         copy(subgraphs.begin() + 1, subgraphs.end() - 1, res.begin());
@@ -57,10 +57,10 @@ vector<pair<VRP, VRP>> genSubs(VRP &prob, VRPspecs &info) {
     vector<pair<VRP, VRP>> resSubs;
 
     // Create every possible bit pattern of N subproblems, split into two sets
-    vector<pair<vector<int>, vector<int>>> subsets;
+    vector<pair<vector<point>, vector<point>>> subsets;
     for (int i = 2; i < pow(2, prob.list.size() - 1); i+=2) {
-        vector<int> left;
-        vector<int> right;
+        vector<point> left;
+        vector<point> right;
 
 		for (int j = 0; (size_t)j < prob.list.size(); j++) {
             if (j == info.master) {
@@ -82,14 +82,13 @@ vector<pair<VRP, VRP>> genSubs(VRP &prob, VRPspecs &info) {
         VRP next1;
         VRP next2;
         next1.list = p.first;
-
         next2.list = p.second;
 
         int maxlen = max(next1.list.size() - 1, next2.list.size() - 1);
         int minlen = min((int) next1.list.size() - 1, (int) next2.list.size() - 1);
 
-        int smallVehicles = 1;
-        int largeVehicles = prob.numVehicles - 1;
+        point smallVehicles = 1;
+        point largeVehicles = prob.numVehicles - 1;
 
         if (largeVehicles > maxlen) {
             smallVehicles += largeVehicles - maxlen;
@@ -112,13 +111,13 @@ vector<pair<VRP, VRP>> genSubs(VRP &prob, VRPspecs &info) {
 }
 
 //checks for incoming data requests and responds
-pair<vector<vector<int>>, vector<MPI_Request>> fillRequests(VRPspecs &info, unordered_map<VRP, VRPsolution> &solnMap) {
+pair<vector<vector<point>>, vector<MPI_Request>> fillRequests(VRPspecs &info, unordered_map<VRP, VRPsolution> &solnMap) {
     //totalPoints + 1 because we send the number of vehicles as well
     const int requestSize = info.originalP + 1;
 
     //In message there should be a 0 for each vehicle, this is largest possible message size
     const int routeAnswerSize = info.originalP + info.originalV;
-    const int costAnswerSize = 1;
+    const int costAnswerSize = INT2P;
     const int answerSize = routeAnswerSize + costAnswerSize;
 
     //check for requests
@@ -133,7 +132,7 @@ pair<vector<vector<int>>, vector<MPI_Request>> fillRequests(VRPspecs &info, unor
         MPI_Iprobe(i, REQUEST_ROUTES, MPI_COMM_WORLD, &routeFlags[i], MPI_STATUS_IGNORE);
     }
 
-    vector<vector<int>> filledReqs;
+    vector<vector<point>> filledReqs;
     vector<MPI_Request> filledReqStatus;
     VRP req;
 
@@ -146,7 +145,7 @@ pair<vector<vector<int>>, vector<MPI_Request>> fillRequests(VRPspecs &info, unor
 
             // Receive request from specific message type
             req.list.resize(requestSize);
-            MPI_Recv((void *) req.list.data(), requestSize, MPI_INT, i, rTag, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+            MPI_Recv((void *) req.list.data(), requestSize * sizeof(point), MPI_CHAR, i, rTag, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
 
             // Resize the request for lookup
             req.numVehicles = req.list[requestSize - 1];
@@ -160,28 +159,29 @@ pair<vector<vector<int>>, vector<MPI_Request>> fillRequests(VRPspecs &info, unor
             unordered_map<VRP, VRPsolution>::const_iterator foundit = solnMap.find(req);
 
             // Resize answer vector based on message type
-            vector<int> answerVal;
+            vector<point> answerVal;
             int size = flags[i] ? answerSize : (costFlags[i] ? costAnswerSize : routeAnswerSize);
-            answerVal.resize(size); 
+            answerVal.resize(size);
             MPI_Request answerReq;
 
             if (foundit != solnMap.end()) { 
                 // Found case, send solution
-                if (flags[i] || costFlags[i]) answerVal[0] = foundit->second.time;
+                if (flags[i] || costFlags[i]) ((int *) answerVal.data())[0] = foundit->second.time;
 
                 if (flags[i] || routeFlags[i]) {
-                    int pos = flags[i] ? 1 : 0;
+                    int pos = flags[i] ? INT2P : 0;
                     for (auto &journey : foundit->second.routes) {
                         copy(journey.begin(), journey.end(), answerVal.begin() + pos);
                         pos += journey.size() - 1;
                     }
                 }
 
-                MPI_Isend((void *) answerVal.data(), size, MPI_INT, i, aTag, MPI_COMM_WORLD, &answerReq);
+                // Should change this to MPI_CHAR and multiply size by sizeof point
+                MPI_Isend((void *) answerVal.data(), size * sizeof(point), MPI_CHAR, i, aTag, MPI_COMM_WORLD, &answerReq);
             } else { 
                 // Send empty array if not found. This is an error
                 cout << "Error, shouldn't be requesting here" << endl;
-                MPI_Isend((void *) answerVal.data(), size, MPI_INT, i, aTag, MPI_COMM_WORLD, &answerReq);
+                MPI_Isend((void *) answerVal.data(), size * sizeof(point), MPI_CHAR, i, aTag, MPI_COMM_WORLD, &answerReq);
             }
             filledReqs.push_back(answerVal);
             filledReqStatus.push_back(answerReq);
@@ -195,20 +195,20 @@ pair<vector<vector<int>>, vector<MPI_Request>> fillRequests(VRPspecs &info, unor
 // Function for formatting a request and responding while waiting
 VRPsolution reqSoln(VRP &prob, VRPspecs &info, unordered_map<VRP, VRPsolution> &solnMap, MSG_TAG tag) {
     const int requestSize = info.originalP + 1;  //totalPoints + 1 because we send the number of vehicles as well
-    const int answerSize = tag == REQUEST ? info.originalP + info.originalV + 1 : (tag == REQUEST_COST ? 1 : info.originalP + info.originalV);   //In message there should be a 0 for each vehicle, this is largest possible message size
+    const int answerSize = tag == REQUEST ? info.originalP + info.originalV + INT2P : (tag == REQUEST_COST ? INT2P : info.originalP + info.originalV);   //In message there should be a 0 for each vehicle, this is largest possible message size
 
     // Set the answer tag based on the request
     MSG_TAG answerTag = (tag == REQUEST ? ANSWER : (tag == REQUEST_COST ? ANSWER_COST : ANSWER_ROUTES));
 
     vector<MPI_Request> filledReqStatus;
-    vector<vector<int>> filledReqs;
+    vector<vector<point>> filledReqs;
 
     // Find who owns the data
     int hashedProc = hash<VRP>{}(prob) % info.proc;
 
-    vector<int> request;
+    vector<point> request;
     request.resize(requestSize);
-    vector<int> answer;
+    vector<point> answer;
     answer.resize(answerSize);
 
     // Format the request with number of vehicles at the end
@@ -217,13 +217,13 @@ VRPsolution reqSoln(VRP &prob, VRPspecs &info, unordered_map<VRP, VRPsolution> &
 
     // Request solution to problem
     MPI_Request myReq; // Unused because it has to be filled to leave function
-    MPI_Isend((void *) request.data(), requestSize, MPI_INT, hashedProc, tag, MPI_COMM_WORLD, &myReq);
+    MPI_Isend((void *) request.data(), requestSize * sizeof(point), MPI_CHAR, hashedProc, tag, MPI_COMM_WORLD, &myReq);
     filledReqs.push_back(request);
     filledReqStatus.push_back(myReq);
 
     // Asynch Receive solution if it has been solved, keep checking for sends while waiting to avoid deadlock
     MPI_Request recRequest;
-    MPI_Irecv((void *) answer.data(), answerSize, MPI_INT, hashedProc, answerTag, MPI_COMM_WORLD, &recRequest);
+    MPI_Irecv((void *) answer.data(), answerSize * sizeof(point), MPI_CHAR, hashedProc, answerTag, MPI_COMM_WORLD, &recRequest);
     filledReqs.push_back(answer);
 
     //manually check if receive request was completed
@@ -232,7 +232,7 @@ VRPsolution reqSoln(VRP &prob, VRPspecs &info, unordered_map<VRP, VRPsolution> &
 
     // Fill requests until the packet has been received
     while (!recFlag) {
-        pair<vector<vector<int>>, vector<MPI_Request>> newFills = fillRequests(info, solnMap);
+        pair<vector<vector<point>>, vector<MPI_Request>> newFills = fillRequests(info, solnMap);
 
         filledReqs.insert(filledReqs.end(), newFills.first.begin(), newFills.first.end());
         filledReqStatus.insert(filledReqStatus.end(), newFills.second.begin(), newFills.second.end());
@@ -242,7 +242,7 @@ VRPsolution reqSoln(VRP &prob, VRPspecs &info, unordered_map<VRP, VRPsolution> &
         
     VRPsolution currSolution;
     // Set min time, or look it up if you know you have it
-    if (tag == REQUEST || tag == REQUEST_COST) currSolution.time = answer[0];
+    if (tag == REQUEST || tag == REQUEST_COST) currSolution.time = ((int *) answer.data())[0];
     else {
         unordered_map<VRP, VRPsolution>::const_iterator got = solnMap.find(prob);
 
@@ -256,11 +256,11 @@ VRPsolution reqSoln(VRP &prob, VRPspecs &info, unordered_map<VRP, VRPsolution> &
         }
     }
     
-    vector<int> path;
-    int masters = 0;
+    vector<point> path;
+    point masters = 0;
     // Wont enter this loop if the request is just for cost
     // Format routes
-    for (int i = (tag == REQUEST_ROUTES ? 0 : 1); i < answerSize; i++) {
+    for (int i = (tag == REQUEST_ROUTES ? 0 : INT2P); i < answerSize; i++) {
         if (answer[i] == info.master) {
             if (masters != 0) {
                 path.push_back(answer[i]);
@@ -286,9 +286,9 @@ VRPsolution reqSoln(VRP &prob, VRPspecs &info, unordered_map<VRP, VRPsolution> &
 // TODO revise to sync in a ring, 2 * N communications instead of N^2
 // TODO Modify into ring reduce
 void syncLevel(VRPspecs &info, unordered_map<VRP, VRPsolution> &solnMap) {
-    vector<vector<int>> filledReqs;
+    vector<vector<point>> filledReqs;
     vector<MPI_Request> filledReqStatus;
-    vector<int> sVec;
+    vector<point> sVec;
 
     // Message doesn't matter
     sVec.resize(1);
@@ -298,7 +298,7 @@ void syncLevel(VRPspecs &info, unordered_map<VRP, VRPsolution> &solnMap) {
     for (int i = 0; i < info.proc; i++) { 
         if (i == info.pid) continue;
         MPI_Request syncReq;
-        MPI_Isend((void *) sVec.data(), 0, MPI_INT, i, LEVEL_SYNC, MPI_COMM_WORLD, &syncReq);
+        MPI_Isend((void *) sVec.data(), 0, MPI_CHAR, i, LEVEL_SYNC, MPI_COMM_WORLD, &syncReq);
         filledReqStatus.push_back(syncReq);
     }
 
@@ -322,13 +322,13 @@ void syncLevel(VRPspecs &info, unordered_map<VRP, VRPsolution> &solnMap) {
             if (i == info.pid) continue;
             if (syncFlags[i] != 0) {
                 req.list.resize(1);
-                MPI_Recv((void *) req.list.data(), 0, MPI_INT, i, LEVEL_SYNC, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+                MPI_Recv((void *) req.list.data(), 0, MPI_CHAR, i, LEVEL_SYNC, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
                 readySync[i] = 1;
             } else if (readySync[i] != 1) {
                 syncReady = 0;
             }
         }
-        pair<vector<vector<int>>, vector<MPI_Request>> newFills = fillRequests(info, solnMap);
+        pair<vector<vector<point>>, vector<MPI_Request>> newFills = fillRequests(info, solnMap);
         filledReqs.insert(filledReqs.end(), newFills.first.begin(), newFills.first.end());
         filledReqStatus.insert(filledReqStatus.end(), newFills.second.begin(), newFills.second.end());
     }
@@ -339,8 +339,8 @@ void syncLevel(VRPspecs &info, unordered_map<VRP, VRPsolution> &solnMap) {
 
 
 // Function for reducing the mincosts in the hash tables to every processor
-pair<vector<vector<int>>, vector<MPI_Request>> ringReduce(VRPspecs &info, unordered_map<VRP, VRPsolution> &solnMap, unordered_map<VRP, VRPsolution> &newSolns) {
-    vector<vector<int>> filledReqs;
+pair<vector<vector<point>>, vector<MPI_Request>> ringReduce(VRPspecs &info, unordered_map<VRP, VRPsolution> &solnMap, unordered_map<VRP, VRPsolution> &newSolns) {
+    vector<vector<point>> filledReqs;
     vector<MPI_Request> filledReqStatus;
 
     //int totalAdded = 0;
@@ -359,16 +359,16 @@ pair<vector<vector<int>>, vector<MPI_Request>> ringReduce(VRPspecs &info, unorde
     MPI_Isend((void *) &myValSize, 1, MPI_INT, destProc, REDUCE, MPI_COMM_WORLD, &sizeReq);
     filledReqStatus.push_back(sizeReq);
 
-    vector<int> myVals;
-    myVals.resize(myValSize * (requestSize + 1));
+    vector<point> myVals;
+    myVals.resize(myValSize * (requestSize + INT2P));
     
     // Format data as vector..., numVehicles, time
     int pos = 0;
     for (auto it = newSolns.begin(); it != newSolns.end(); ++it) {
         copy(it->first.list.begin(), it->first.list.end(), myVals.begin() + pos);
-        myVals[pos + requestSize] = it->second.time;
-        myVals[pos + requestSize - 1] = it->first.numVehicles;
-        pos += requestSize + 1;
+        ((int *)(&myVals[pos + requestSize]))[0] = it->second.time;
+        myVals[pos + requestSize - INT2P] = it->first.numVehicles;
+        pos += requestSize + INT2P;
 
         // Add newSolns into existing solutions, overwriting because these are complete and they shouldnt be present
         solnMap[it->first] = it->second;
@@ -377,18 +377,18 @@ pair<vector<vector<int>>, vector<MPI_Request>> ringReduce(VRPspecs &info, unorde
     //totalAdded += dataSize;
 
     MPI_Request sendRequest;
-    // Send to PID 1 above with the size of hash table entries to be communicated
-    MPI_Isend((void *) myVals.data(), myValSize * (requestSize + 1), MPI_INT, destProc, REDUCE_DATA, MPI_COMM_WORLD, &sendRequest);
+    // Send to PID 1 above, these are the hash table entries
+    MPI_Isend((void *) myVals.data(), myValSize * (requestSize + INT2P) * sizeof(point), MPI_CHAR, destProc, REDUCE_DATA, MPI_COMM_WORLD, &sendRequest);
 
     int newData = 0;
-    vector<int> req;
+    vector<point> req;
     int reqSize;
     int sendFlag = 0;
 
     // Iterate through levels of ring reduce
     for (int level = 0; level < info.proc - 1; level++) {
         while (!newData) {
-            pair<vector<vector<int>>, vector<MPI_Request>> newFills = fillRequests(info, solnMap);
+            pair<vector<vector<point>>, vector<MPI_Request>> newFills = fillRequests(info, solnMap);
             filledReqs.insert(filledReqs.end(), newFills.first.begin(), newFills.first.end());
             filledReqStatus.insert(filledReqStatus.end(), newFills.second.begin(), newFills.second.end());
 
@@ -408,7 +408,7 @@ pair<vector<vector<int>>, vector<MPI_Request>> ringReduce(VRPspecs &info, unorde
 
         //totalAdded += reqSize;
         while (!newData) {
-            pair<vector<vector<int>>, vector<MPI_Request>> newFills = fillRequests(info, solnMap);
+            pair<vector<vector<point>>, vector<MPI_Request>> newFills = fillRequests(info, solnMap);
             filledReqs.insert(filledReqs.end(), newFills.first.begin(), newFills.first.end());
             filledReqStatus.insert(filledReqStatus.end(), newFills.second.begin(), newFills.second.end());
 
@@ -419,16 +419,16 @@ pair<vector<vector<int>>, vector<MPI_Request>> ringReduce(VRPspecs &info, unorde
 
         if (level % 2 == 0) {
             // Receive actual data
-            MPI_Recv((void *) req.data(), reqSize * (requestSize + 1), MPI_INT, srcProc, REDUCE_DATA + 2 * level, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+            MPI_Recv((void *) req.data(), reqSize * (requestSize + INT2P) * sizeof(point), MPI_CHAR, srcProc, REDUCE_DATA + 2 * level, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
         } else {
             // Receive size of data and resize receive buffer
-            MPI_Recv((void *) myVals.data(), myValSize * (requestSize + 1), MPI_INT, srcProc, REDUCE_DATA + 2 * level, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+            MPI_Recv((void *) myVals.data(), myValSize * (requestSize + INT2P) * sizeof(point), MPI_CHAR, srcProc, REDUCE_DATA + 2 * level, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
         }
 
 
         // Fill requests until the send has completed and the level is finished
         while (!sendFlag) {
-            pair<vector<vector<int>>, vector<MPI_Request>> newFills = fillRequests(info, solnMap);
+            pair<vector<vector<point>>, vector<MPI_Request>> newFills = fillRequests(info, solnMap);
             filledReqs.insert(filledReqs.end(), newFills.first.begin(), newFills.first.end());
             filledReqStatus.insert(filledReqStatus.end(), newFills.second.begin(), newFills.second.end());
 
@@ -439,15 +439,15 @@ pair<vector<vector<int>>, vector<MPI_Request>> ringReduce(VRPspecs &info, unorde
 
         // Copy data into hash table
         int maxSize = level % 2 == 0 ? reqSize : myValSize;
-        vector<int> temp = level % 2 == 0 ? req : myVals;
-        for (int ind = 0; ind < maxSize * (requestSize + 1); ind+=(requestSize + 1)) {
+        vector<point> temp = level % 2 == 0 ? req : myVals;
+        for (int ind = 0; ind < (int) (maxSize * (requestSize + INT2P)); ind+=(requestSize + INT2P)) {
             VRP incoming;
             VRPsolution inSoln;
 
-            inSoln.time = temp[ind + requestSize];
-            incoming.numVehicles = temp[ind + requestSize - 1];
+            inSoln.time = ((int *)(&temp[ind + requestSize]))[0];
+            incoming.numVehicles = temp[ind + requestSize - INT2P];
 
-            int last = ind + requestSize - 2;
+            int last = ind + requestSize - 1 - INT2P;
             for (; last > ind; last--) {
                 if (temp[last] != 0) break;
             }
@@ -464,11 +464,11 @@ pair<vector<vector<int>>, vector<MPI_Request>> ringReduce(VRPspecs &info, unorde
             if (level % 2 == 0) {
                 MPI_Isend((void *) &reqSize, 1, MPI_INT, destProc, REDUCE + 2 * (level + 1), MPI_COMM_WORLD, &a);
                 // Send to PID 1 above with the size of hash table entries to be communicated
-                MPI_Isend((void *) req.data(), reqSize * (requestSize + 1), MPI_INT, destProc, REDUCE_DATA + 2 * (level + 1), MPI_COMM_WORLD, &sendRequest);
+                MPI_Isend((void *) req.data(), reqSize * (requestSize + INT2P) * sizeof(point), MPI_CHAR, destProc, REDUCE_DATA + 2 * (level + 1), MPI_COMM_WORLD, &sendRequest);
             } else {
                 MPI_Isend((void *) &myValSize, 1, MPI_INT, destProc, REDUCE + 2 * (level + 1), MPI_COMM_WORLD, &a);
                 // Send to PID 1 above with the size of hash table entries to be communicated
-                MPI_Isend((void *) myVals.data(), myValSize * (requestSize + 1), MPI_INT, destProc, REDUCE_DATA + 2 * (level + 1), MPI_COMM_WORLD, &sendRequest);
+                MPI_Isend((void *) myVals.data(), myValSize * (requestSize + INT2P) * sizeof(point), MPI_CHAR, destProc, REDUCE_DATA + 2 * (level + 1), MPI_COMM_WORLD, &sendRequest);
             }
             filledReqStatus.push_back(a);
         }
@@ -487,9 +487,9 @@ VRPsolution vrpSolve(VRP &prob, VRPspecs &info, unordered_map<VRP, VRPsolution> 
 
     VRPsolution res;
     // Fill some requests before we begin
-    pair<vector<vector<int>>, vector<MPI_Request>> currentlyFilling = fillRequests(info, solnMap);
+    pair<vector<vector<point>>, vector<MPI_Request>> currentlyFilling = fillRequests(info, solnMap);
     vector<MPI_Request> filledReqStatus = currentlyFilling.second;
-    vector<vector<int>> filledReqs = currentlyFilling.first;
+    vector<vector<point>> filledReqs = currentlyFilling.first;
 
     // if the problem only has 1 vehicle, then calculate tsp
     if (prob.numVehicles == 1) {
@@ -597,8 +597,8 @@ int main(int argc, char *argv[])
     StartupOptions config = parseOptions(argc, argv);
 
     int size = config.nodes;
-    int vehicles = config.vehicles;
-    int master = 0; // Keep at 0 until debugged
+    point vehicles = config.vehicles;
+    point master = 0; // Keep at 0 until debugged
     bool printPaths = config.printPaths;
     bool timeLevels = config.timeLevels;
 
@@ -638,13 +638,13 @@ int main(int argc, char *argv[])
     MPI_Barrier(MPI_COMM_WORLD);
     Timer totalTime;
 
-    vector<vector<int>> allSubs = genWork(size, master);
+    vector<vector<point>> allSubs = genWork(size, master);
     unordered_map<VRP, VRPsolution> routeTable;
 
     VRP prob;
     VRPspecs info;
-    vector<int> allPoints;
-    for(int i = 0; i < size; i++) {
+    vector<point> allPoints;
+    for(point i = 0; i < size; i++) {
         allPoints.push_back(i);
     }
 
@@ -661,35 +661,42 @@ int main(int argc, char *argv[])
     info.ringReduce = config.ringReduce;
 
     double *levelTimes = new double[vehicles - 1];
-    for (int nVehicles = 1; nVehicles < vehicles; nVehicles++) {
-        vector<vector<int>> validSubs;
+    for (point nVehicles = 1; nVehicles < vehicles; nVehicles++) {
+        vector<vector<vector<point>>> procSubs;
+        vector<vector<point>> validSubs;
         Timer levelTime;
         unordered_map<VRP, VRPsolution> newSolns;
-        
+
+        procSubs.resize(proc);
         for (auto &sp : allSubs) {
-            if (nVehicles <= (int) sp.size()) {
+            if (nVehicles <= (point) sp.size()) {
                 VRP currSP; 
                 currSP.numVehicles = nVehicles;
                 currSP.list = sp;
-                
-                if ((int) (hash<VRP>{}(currSP) % proc) == pid) {
-                    vrpSolve(currSP, info, routeTable, newSolns, matrix, size);
-                }
+
+                procSubs[(int) (hash<VRP>{}(currSP) % proc)].push_back(sp);
                 validSubs.push_back(sp);
             }
         }
+
+        for (int i = 0; i < (int) procSubs[pid].size(); i++) {
+            VRP currSP; 
+            currSP.numVehicles = nVehicles;
+            currSP.list = procSubs[pid][i];
+            
+            vrpSolve(currSP, info, routeTable, newSolns, matrix, size);
+            //i = giveWork(i, info, )?
+        }
+
         allSubs = validSubs;
 
         // Visualize workload imbalance
         if (timeLevels) levelTimes[nVehicles - 1] = levelTime.elapsed();
 
-
-        pair<vector<vector<int>>, vector<MPI_Request>> newFills;
+        pair<vector<vector<point>>, vector<MPI_Request>> newFills;
         if (config.ringReduce) newFills = ringReduce(info, routeTable, newSolns);
         else syncLevel(info, routeTable);
         MPI_Waitall(newFills.second.size(), newFills.second.data(), MPI_STATUSES_IGNORE);
-        //cout << "finished level" << endl;
-        //cout << pid << ": Table sizes " << newSolns.size() << ", " << routeTable.size() << endl;
     }
 
 
@@ -707,7 +714,7 @@ int main(int argc, char *argv[])
     //cout << pid << endl;
 
     if (timeLevels) {
-        for (int i = 0; i < vehicles - 1; i++) {
+        for (point i = 0; i < vehicles - 1; i++) {
             if (pid == 0) cout << "\nLevel " << i + 1 << endl;
             MPI_Barrier(MPI_COMM_WORLD);
 

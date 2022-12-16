@@ -22,7 +22,7 @@ void printMatrix(int **adjacencyMatrix, int size) {
 }
 
 // Creates a new node in the branch and bound decision tree
-Node* newNode(int **matrix_parent, int size, vector<pair<int, int>> const &path, int level, int i, int j)
+Node* newNode(int **matrix_parent, int size, vector<pair<point, point>> const &path, int level, int i, int j)
 {
     Node* node = new Node;
     node->path = path;
@@ -50,7 +50,7 @@ Node* newNode(int **matrix_parent, int size, vector<pair<int, int>> const &path,
 }
 
 // Performs row and column matrix reduction
-void reduce(int**matrix_reduced, int *row, int *col, int size, vector<int> nodes)
+void reduce(int**matrix_reduced, int *row, int *col, int size, vector<point> nodes)
 {
     fill_n(row, size, INF);
     fill_n(col, size, INF);
@@ -77,7 +77,7 @@ void reduce(int**matrix_reduced, int *row, int *col, int size, vector<int> nodes
 }
 
 // Calculates the cose of performing the matrix reduction
-int calcCost(int **matrix_reduced, int size, vector<int> nodes)
+int calcCost(int **matrix_reduced, int size, vector<point> nodes)
 {
     int row[size];
     int col[size];
@@ -94,8 +94,8 @@ int calcCost(int **matrix_reduced, int size, vector<int> nodes)
 }
 
 // Prints the path that the TSP took to solving the problem
-vector<int> printPath(vector<pair<int, int>> const &list, bool printOn) {
-    vector<int> res;
+vector<point> printPath(vector<pair<point, point>> const &list, bool printOn) {
+    vector<point> res;
     for (int i = 0; (size_t) i < list.size() - 1; i++) {
         if(printOn) cout << list[i].first << " -> ";
         res.push_back(list[i].first);
@@ -107,11 +107,11 @@ vector<int> printPath(vector<pair<int, int>> const &list, bool printOn) {
 }
 
 // Performs the branch and bound search algorithm using matrix reduction and a priority queue
-VRPsolution tspSolve(int **adjacencyMatrix, int size, vector<int> nodes, bool printOn)
+VRPsolution tspSolve(int **adjacencyMatrix, int size, vector<point> nodes, bool printOn)
 {
     int nodeSize = nodes.size();
     priority_queue<Node*, vector<Node*>, comp> pq;
-    vector<pair<int,int>> v;
+    vector<pair<point,point>> v;
     Node* root = newNode(adjacencyMatrix, size, v, 0, -1, 0);
     root->time = calcCost(root->matrix_reduced, size, nodes);
     pq.push(root);
@@ -119,12 +119,12 @@ VRPsolution tspSolve(int **adjacencyMatrix, int size, vector<int> nodes, bool pr
     {
         Node* min = pq.top();
         pq.pop();
-        int i = min->vertex;
+        point i = min->vertex;
         if (min->level == nodeSize - 1)
         {
             min->path.push_back(make_pair(i, 0));
-            vector<int> finalPath = printPath(min->path, printOn);
-            vector<vector<int>> wrapped;
+            vector<point> finalPath = printPath(min->path, printOn);
+            vector<vector<point>> wrapped;
             wrapped.push_back(finalPath);
             VRPsolution done;
             done.routes = wrapped;

@@ -4,7 +4,6 @@
 using namespace std;
 #include <queue>
 #include <unordered_map>
-#include <set>
 #include <limits>
 #include <iostream>
 #include <fstream>
@@ -12,6 +11,8 @@ using namespace std;
 #include <cmath>
 #include <algorithm>
 #include <random>
+#include <cstring>
+#include <cstdint>
 
 #include "timing.h"
 #include "mpi.h"
@@ -19,6 +20,10 @@ using namespace std;
 
 // Int max to be used as infinity
 #define INF numeric_limits<int>::max()
+#define INT2P (sizeof(int)/sizeof(point))
+
+typedef uint8_t point;
+//typedef int point;
 
 // Struct for storing startup options based on commandline input
 struct StartupOptions {
@@ -72,10 +77,10 @@ inline StartupOptions parseOptions(int argc, char *argv[]) {
 class Node
 {
 public:
-    vector<pair<int, int>> path;
+    vector<pair<point, point>> path;
     int **matrix_reduced;
     int time;
-    int vertex;
+    point vertex;
     int level;
 };
 
@@ -90,11 +95,11 @@ public:
 
 // VRP DEFINITIONS
 struct VRPspecs {
-  int master;
+  point master;
   int proc;
   int pid;
-  int originalP;
-  int originalV;
+  point originalP;
+  point originalV;
   int printPaths;
   int requests = 0;
   bool reduceComm;
@@ -102,8 +107,8 @@ struct VRPspecs {
 };
 
 struct VRP {
-  vector<int> list;
-  int numVehicles;
+  vector<point> list;
+  point numVehicles;
   
   // Comparison function for hash table lookup
   friend bool operator==(const VRP& a, const VRP& b) {
@@ -113,7 +118,7 @@ struct VRP {
 
 // The solution struct of a VRP containing routes and cost
 struct VRPsolution {
-    vector<vector<int>> routes;
+    vector<vector<point>> routes;
     int time;
 };
 
@@ -142,6 +147,6 @@ enum MSG_TAG {LEVEL_SYNC = 0,
 
 // TSP Function to be called at base level in VRP
 void printMatrix(int **adjacencyMatrix, int size);
-VRPsolution tspSolve(int **adjacencyMatrix, int size, vector<int> nodes, bool printOn);
+VRPsolution tspSolve(int **adjacencyMatrix, int size, vector<point> nodes, bool printOn);
 
 #endif
