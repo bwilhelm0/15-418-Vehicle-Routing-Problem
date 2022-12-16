@@ -364,7 +364,7 @@ pair<vector<vector<point>>, vector<MPI_Request>> ringReduce(VRPspecs &info, unor
     for (auto it = newSolns.begin(); it != newSolns.end(); ++it) {
         copy(it->first.list.begin(), it->first.list.end(), myVals.begin() + pos);
         *((int *)(&myVals[pos + requestSize])) = it->second.time;
-        myVals[pos + requestSize - INT2P] = it->first.numVehicles;
+        myVals[pos + requestSize - 1] = it->first.numVehicles;
         pos += requestSize + INT2P;
 
         // Add newSolns into existing solutions, overwriting because these are complete and they shouldnt be present
@@ -395,10 +395,10 @@ pair<vector<vector<point>>, vector<MPI_Request>> ringReduce(VRPspecs &info, unor
         // Receive size of data and resize receive buffer
         if (level % 2 == 0) {
             MPI_Recv((void *) &reqSize, 1, MPI_INT, srcProc, REDUCE + 2 * level, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-            req.resize(reqSize * (requestSize + 1));
+            req.resize(reqSize * (requestSize + INT2P));
         } else {
             MPI_Recv((void *) &myValSize, 1, MPI_INT, srcProc, REDUCE + 2 * level, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-            myVals.resize(myValSize * (requestSize + 1));
+            myVals.resize(myValSize * (requestSize + INT2P));
         }
 
         //totalAdded += reqSize;
@@ -440,15 +440,15 @@ pair<vector<vector<point>>, vector<MPI_Request>> ringReduce(VRPspecs &info, unor
             VRPsolution inSoln;
 
             inSoln.time = *((int *)(&temp[ind + requestSize]));
-            incoming.numVehicles = temp[ind + requestSize - INT2P];
+            incoming.numVehicles = temp[ind + requestSize - 1];
 
-            int last = ind + requestSize - 1 - INT2P;
+            // This needs to be -2 because this is the last index of the route
+            int last = ind + requestSize - 2;
             for (; last > ind; last--) {
                 if (temp[last] != 0) break;
             }
 
             incoming.list.insert(incoming.list.end(), temp.begin() + ind, temp.begin() + last + 1);
-            //printList(incoming.list);
 
             // We use insert here because we want it to fail if there is a solution with routes already in the table
             solnMap.insert({incoming, inSoln});
@@ -470,7 +470,6 @@ pair<vector<vector<point>>, vector<MPI_Request>> ringReduce(VRPspecs &info, unor
     }
 
     syncLevel(info, solnMap);
-    //cout << totalAdded - (solnMap.size() - actualAdded) << endl;
 
     return make_pair(filledReqs, filledReqStatus);
 }
