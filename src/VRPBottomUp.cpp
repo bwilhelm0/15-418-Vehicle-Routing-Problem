@@ -194,6 +194,7 @@ pair<vector<vector<point>>, vector<MPI_Request>> fillRequests(VRPspecs &info, un
 
 // Function for formatting a request and responding while waiting
 VRPsolution reqSoln(VRP &prob, VRPspecs &info, unordered_map<VRP, VRPsolution> &solnMap, MSG_TAG tag) {
+    info.requests++;
     const int requestSize = info.originalP + 1;  //totalPoints + 1 because we send the number of vehicles as well
     const int answerSize = tag == REQUEST ? info.originalP + info.originalV + INT2P : (tag == REQUEST_COST ? INT2P : info.originalP + info.originalV);   //In message there should be a 0 for each vehicle, this is largest possible message size
 
@@ -277,7 +278,7 @@ VRPsolution reqSoln(VRP &prob, VRPspecs &info, unordered_map<VRP, VRPsolution> &
     }
 
     // Add solution to hash table, possibly overriding existing routes
-    solnMap[prob] = currSolution;
+    if (info.saveRequests) solnMap[prob] = currSolution;
     MPI_Waitall(filledReqStatus.size(), filledReqStatus.data(), MPI_STATUSES_IGNORE);
     return currSolution;
 }
@@ -379,9 +380,10 @@ pair<vector<vector<point>>, vector<MPI_Request>> ringReduce(VRPspecs &info, unor
     vector<point> req;
     int reqSize;
     int sendFlag = 0;
+    int levels = info.steps == -1 ? info.proc - 1 : info.steps;
 
     // Iterate through levels of ring reduce
-    for (int level = 0; level < info.proc - 1; level++) {
+    for (int level = 0; level < levels; level++) {
         while (!newData) {
             pair<vector<vector<point>>, vector<MPI_Request>> newFills = fillRequests(info, solnMap);
             filledReqs.insert(filledReqs.end(), newFills.first.begin(), newFills.first.end());
@@ -454,7 +456,7 @@ pair<vector<vector<point>>, vector<MPI_Request>> ringReduce(VRPspecs &info, unor
             solnMap.insert({incoming, inSoln});
         }
 
-        if (level != info.proc - 2) {
+        if (level != levels - 1) {
             MPI_Request a;
             if (level % 2 == 0) {
                 MPI_Isend((void *) &reqSize, 1, MPI_INT, destProc, REDUCE + 2 * (level + 1), MPI_COMM_WORLD, &a);
@@ -522,18 +524,16 @@ VRPsolution vrpSolve(VRP &prob, VRPspecs &info, unordered_map<VRP, VRPsolution> 
             } 
             // Otherwise request it
             else {
-                if (info.ringReduce) cout << "Error, should never be here" << endl;
+                if (info.ringReduce && info.steps == -1) cout << "Error, should never be here" << endl;
                 soln1 = reqSoln(pairSub.first, info, solnMap, reqTag);
-                info.requests++;
             }
             
             if (gotSecond != solnMap.end()) {
                 soln2 = gotSecond->second;
             } 
             else {
-                if (info.ringReduce) cout << "Error, should never be here" << endl;
+                if (info.ringReduce && info.steps == -1) cout << "Error, should never be here" << endl;
                 soln2 = reqSoln(pairSub.second, info, solnMap, reqTag);
-                info.requests++;
             }
 
             if (soln1.time == 0 || soln2.time == 0) {
@@ -560,12 +560,10 @@ VRPsolution vrpSolve(VRP &prob, VRPspecs &info, unordered_map<VRP, VRPsolution> 
     if (reqFirst) {
         VRPsolution first = reqSoln(finalPair.first, info, solnMap, REQUEST_ROUTES);
         res.routes.insert(res.routes.end(), first.routes.begin(), first.routes.end());
-        info.requests++;
     }
     if (reqSecond) {
         VRPsolution second = reqSoln(finalPair.second, info, solnMap, REQUEST_ROUTES);
         res.routes.insert(res.routes.end(), second.routes.begin(), second.routes.end());
-        info.requests++;
     }
 
     // Set result with mincost and routes
@@ -596,7 +594,7 @@ int main(int argc, char *argv[])
     bool printPaths = config.printPaths;
     bool timeLevels = config.timeLevels;
 
-    if ((vehicles >= size || vehicles <= 0 || size <= 1)) {
+    if ((vehicles >= size || vehicles <= 0 || size <= 1) || (config.steps != -1 && config.steps >= proc)) {
         if (pid == 0) cout << "error, invalid input" << endl;
         return 0;
     }
@@ -653,6 +651,8 @@ int main(int argc, char *argv[])
     info.printPaths = printPaths;
     info.reduceComm = config.reduceComm;
     info.ringReduce = config.ringReduce;
+    info.steps = config.steps;
+    info.saveRequests = config.saveRequests;
 
     double *levelTimes = new double[vehicles - 1];
     for (point nVehicles = 1; nVehicles < vehicles; nVehicles++) {

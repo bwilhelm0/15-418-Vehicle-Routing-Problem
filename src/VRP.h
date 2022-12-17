@@ -30,12 +30,14 @@ struct StartupOptions {
   int nodes;
   int vehicles;
   int seed;
+  int steps;
   bool printPaths;
   bool reduceComm;
   bool timeLevels;
   bool printMatrix;
   bool ringReduce;
   bool printRequests;
+  bool saveRequests;
   std::string inputFile;
 };
 
@@ -44,11 +46,13 @@ inline StartupOptions parseOptions(int argc, char *argv[]) {
   StartupOptions rs;
   rs.printPaths = false;
   rs.seed = -1;
+  rs.steps = 0;
   rs.reduceComm = true;
   rs.timeLevels = false;
   rs.printMatrix = false;
   rs.ringReduce = false;
   rs.printRequests = false;
+  rs.saveRequests = true;
   for (int i = 1; i < argc; i++) {
     if (strcmp(argv[i], "-n") == 0)
       rs.nodes = atoi(argv[i + 1]);
@@ -64,10 +68,14 @@ inline StartupOptions parseOptions(int argc, char *argv[]) {
       rs.timeLevels = true;
     else if (strcmp(argv[i], "-M") == 0)
       rs.printMatrix = true;
-    else if (strcmp(argv[i], "-RR") == 0)
+    else if (strcmp(argv[i], "-RR") == 0) {
       rs.ringReduce = true;
+      rs.steps = atoi(argv[i + 1]);
+    }
     else if (strcmp(argv[i], "-pR") == 0)
       rs.printRequests = true;
+    else if (strcmp(argv[i], "-nosave") == 0)
+      rs.saveRequests = false;
   }
   return rs;
 }
@@ -104,6 +112,8 @@ struct VRPspecs {
   int requests = 0;
   bool reduceComm;
   bool ringReduce;
+  int steps = -1;
+  bool saveRequests;
 };
 
 struct VRP {
