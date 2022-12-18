@@ -606,6 +606,7 @@ int main(int argc, char *argv[])
         srand(config.seed);
     }
 
+    // Generate matrix
     vector<int> mVec;
     mVec.resize(size * size);
     if (pid == 0) {
@@ -655,6 +656,8 @@ int main(int argc, char *argv[])
     info.saveRequests = config.saveRequests;
 
     double *levelTimes = new double[vehicles - 1];
+
+    // Iterate through vehicle levels of DP
     for (point nVehicles = 1; nVehicles < vehicles; nVehicles++) {
         vector<vector<vector<point>>> procSubs;
         vector<vector<point>> validSubs;
@@ -673,13 +676,14 @@ int main(int argc, char *argv[])
             }
         }
 
+        // Iterate through relevant VRPs
         for (int i = 0; i < (int) procSubs[pid].size(); i++) {
             VRP currSP; 
             currSP.numVehicles = nVehicles;
             currSP.list = procSubs[pid][i];
             
             vrpSolve(currSP, info, routeTable, newSolns, matrix, size);
-            //i = giveWork(i, info, )?
+            // We would've liked to implement work stealing here
         }
 
         allSubs = validSubs;
@@ -704,8 +708,7 @@ int main(int argc, char *argv[])
         if (timeLevels) cout << "Level timing info: " << endl;
     } 
     syncLevel(info, routeTable);
-
-    //cout << pid << endl;
+    MPI_Barrier(MPI_COMM_WORLD);
 
     if (timeLevels) {
         for (point i = 0; i < vehicles - 1; i++) {
